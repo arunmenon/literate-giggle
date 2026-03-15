@@ -28,7 +28,7 @@ class RubricTemplateResponse(BaseModel):
 
 class EvaluateSessionRequest(BaseModel):
     session_id: int
-    method: str = "rubric"  # "rubric", "ai", "hybrid"
+    method: str = "ai"  # "ai" (default), "rubric", "hybrid"
 
 
 class QuestionEvaluationResponse(BaseModel):
@@ -43,6 +43,8 @@ class QuestionEvaluationResponse(BaseModel):
     keywords_found: Optional[list[str]]
     keywords_missing: Optional[list[str]]
     improvement_hint: Optional[str]
+    confidence: Optional[float] = None
+    evaluation_method: Optional[str] = None
 
 
 class EvaluationResponse(BaseModel):

@@ -1,5 +1,5 @@
 """
-AI-Powered Answer Evaluator using Claude API.
+AI-Powered Answer Evaluator using the unified AI Service Layer.
 
 Provides intelligent evaluation for subjective answers (short, long, case study)
 that goes beyond keyword matching - understanding context, reasoning quality,
@@ -7,14 +7,24 @@ and providing pedagogically useful feedback.
 """
 
 import json
+import logging
 from typing import Optional
 
-from ..core.config import settings
+from pydantic import BaseModel, Field
+
 from ..models.exam import Question, StudentAnswer, QuestionType
+from .ai_service import ai_service
+
+logger = logging.getLogger(__name__)
 
 
-# Prompt template for answer evaluation
-EVALUATION_PROMPT = """You are an expert {board} {subject} teacher evaluating a Class {class_grade} student's answer.
+EVALUATION_SYSTEM = (
+    "You are an expert exam evaluator for Indian school board exams (CBSE/ICSE). "
+    "You evaluate student answers fairly, providing detailed feedback that helps "
+    "students learn. Be encouraging but honest."
+)
+
+EVALUATION_PROMPT = """Evaluate this Class {class_grade} {board} {subject} student's answer.
 
 ## Question
 Type: {question_type}
@@ -33,44 +43,30 @@ Marks: {marks}
 {student_answer}
 
 ## Your Task
-Evaluate the student's answer and provide:
+Award marks fairly based on:
+- Accuracy of content and concepts
+- Completeness of the answer
+- Use of proper terminology and keywords
+- Logical flow and clarity of explanation
+- For numerical: correctness of steps and final answer
+- For diagrams: mention of key labels and structure"""
 
-1. **marks_obtained** (out of {marks}): Award marks fairly based on:
-   - Accuracy of content and concepts
-   - Completeness of the answer
-   - Use of proper terminology and keywords
-   - Logical flow and clarity of explanation
-   - For numerical: correctness of steps and final answer
-   - For diagrams: mention of key labels and structure
 
-2. **feedback**: 2-3 sentences explaining the score. Be encouraging but honest.
+class RubricScores(BaseModel):
+    content_accuracy: int = Field(ge=0, le=4)
+    completeness: int = Field(ge=0, le=4)
+    terminology: int = Field(ge=0, le=4)
+    presentation: int = Field(ge=0, le=4)
 
-3. **keywords_found**: List of key concepts the student correctly included.
 
-4. **keywords_missing**: List of important concepts the student missed.
-
-5. **improvement_hint**: Specific, actionable advice for improvement (1-2 sentences).
-
-6. **rubric_scores**: Score each criterion (out of 4):
-   - content_accuracy: How factually correct is the answer?
-   - completeness: Does it cover all required points?
-   - terminology: Use of correct subject-specific terms?
-   - presentation: Clarity, structure, and logical flow?
-
-Respond ONLY with valid JSON in this exact format:
-{{
-  "marks_obtained": <number>,
-  "feedback": "<string>",
-  "keywords_found": ["<string>", ...],
-  "keywords_missing": ["<string>", ...],
-  "improvement_hint": "<string>",
-  "rubric_scores": {{
-    "content_accuracy": <0-4>,
-    "completeness": <0-4>,
-    "terminology": <0-4>,
-    "presentation": <0-4>
-  }}
-}}"""
+class AIEvaluationResult(BaseModel):
+    marks_obtained: float
+    feedback: str
+    keywords_found: list[str] = []
+    keywords_missing: list[str] = []
+    improvement_hint: str = ""
+    rubric_scores: RubricScores
+    confidence: float = Field(ge=0.0, le=1.0, default=0.8)
 
 
 async def evaluate_with_ai(
@@ -81,13 +77,10 @@ async def evaluate_with_ai(
     class_grade: int = 10,
 ) -> Optional[dict]:
     """
-    Evaluate a student's answer using Claude API.
+    Evaluate a student's answer using the unified AI service.
 
-    Returns evaluation dict or None if API is unavailable.
+    Returns evaluation dict or None if AI is unavailable.
     """
-    if not settings.ANTHROPIC_API_KEY:
-        return None
-
     if not answer.answer_text:
         return {
             "marks_obtained": 0.0,
@@ -102,6 +95,8 @@ async def evaluate_with_ai(
                 "terminology": 0,
                 "presentation": 0,
             },
+            "confidence": 1.0,
+            "evaluation_method": "ai",
         }
 
     # Only use AI for subjective questions
@@ -123,50 +118,32 @@ async def evaluate_with_ai(
         student_answer=answer.answer_text,
     )
 
-    try:
-        import anthropic
+    result = await ai_service.generate_structured(
+        prompt,
+        AIEvaluationResult,
+        system=EVALUATION_SYSTEM,
+        temperature=0.2,
+        use_cache=False,  # Evaluations should always be fresh
+    )
 
-        client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        result_text = response.content[0].text.strip()
-
-        # Parse JSON from response (handle markdown code blocks)
-        if result_text.startswith("```"):
-            result_text = result_text.split("```")[1]
-            if result_text.startswith("json"):
-                result_text = result_text[4:]
-        result_text = result_text.strip()
-
-        result = json.loads(result_text)
-
-        # Validate and cap marks
-        marks_obtained = min(float(result.get("marks_obtained", 0)), question.marks)
-        marks_obtained = max(marks_obtained, 0)
-
-        return {
-            "marks_obtained": round(marks_obtained, 1),
-            "marks_possible": question.marks,
-            "feedback": result.get("feedback", ""),
-            "keywords_found": result.get("keywords_found", []),
-            "keywords_missing": result.get("keywords_missing", []),
-            "improvement_hint": result.get("improvement_hint", ""),
-            "rubric_scores": result.get("rubric_scores", {}),
-        }
-
-    except ImportError:
-        # anthropic package not installed
+    if result is None:
         return None
-    except json.JSONDecodeError:
-        # Failed to parse AI response - fall back to rule-based
-        return None
-    except Exception:
-        # Any API error - fall back to rule-based
-        return None
+
+    # Validate and cap marks
+    marks_obtained = min(float(result.marks_obtained), question.marks)
+    marks_obtained = max(marks_obtained, 0)
+
+    return {
+        "marks_obtained": round(marks_obtained, 1),
+        "marks_possible": question.marks,
+        "feedback": result.feedback,
+        "keywords_found": result.keywords_found,
+        "keywords_missing": result.keywords_missing,
+        "improvement_hint": result.improvement_hint,
+        "rubric_scores": result.rubric_scores.model_dump(),
+        "confidence": result.confidence,
+        "evaluation_method": "ai",
+    }
 
 
 async def generate_ai_recommendations(
@@ -180,11 +157,8 @@ async def generate_ai_recommendations(
     """
     Generate AI-powered study recommendations from evaluation analytics.
 
-    Returns recommendations string or None if API unavailable.
+    Returns recommendations string or None if AI is unavailable.
     """
-    if not settings.ANTHROPIC_API_KEY:
-        return None
-
     prompt = f"""You are an expert {board} {subject} teacher for Class {class_grade}.
 
 Based on this student's exam performance, provide personalized study recommendations:
@@ -207,17 +181,9 @@ Provide:
 Keep the response concise (under 200 words), practical, and encouraging.
 Use simple language suitable for a Class {class_grade} student."""
 
-    try:
-        import anthropic
-
-        client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        return response.content[0].text.strip()
-
-    except Exception:
-        return None
+    return await ai_service.generate(
+        prompt,
+        system=EVALUATION_SYSTEM,
+        max_tokens=512,
+        temperature=0.7,
+    )

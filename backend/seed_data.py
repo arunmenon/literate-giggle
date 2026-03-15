@@ -39,6 +39,11 @@ def q(bank_id, qtype, text, marks, diff, blooms, topic, **kw):
 async def seed():
     await init_db()
 
+    # Seed curriculum data first
+    from seed_curriculum import seed_curriculum
+    await seed_curriculum()
+    print()
+
     async with async_session() as db:
         # ══════════════════════════════════════════
         # USERS
@@ -79,7 +84,7 @@ async def seed():
         # Profiles
         db.add(TeacherProfile(user_id=teacher.id, board="CBSE",
             subjects=json.dumps(["Mathematics"]), classes=json.dumps([9, 10]),
-            institution="Delhi Public School"))
+            institution="Delhi Public School", ai_assistance_level="guided"))
         db.add(TeacherProfile(user_id=teacher2.id, board="CBSE",
             subjects=json.dumps(["Science", "Physics", "Chemistry", "Biology"]),
             classes=json.dumps([9, 10]), institution="Delhi Public School"))

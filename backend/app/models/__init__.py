@@ -11,6 +11,16 @@ from .exam import (
 )
 from .evaluation import Evaluation, QuestionEvaluation, RubricTemplate
 from .learning import LearningPlan, LearningObjective, TopicMastery
+from .curriculum import (
+    Board,
+    Curriculum,
+    CurriculumSubject,
+    CurriculumChapter,
+    CurriculumTopic,
+    LearningOutcome,
+    QuestionPattern,
+    UploadedDocument,
+)
 
 __all__ = [
     "User",
@@ -28,4 +38,12 @@ __all__ = [
     "LearningPlan",
     "LearningObjective",
     "TopicMastery",
+    "Board",
+    "Curriculum",
+    "CurriculumSubject",
+    "CurriculumChapter",
+    "CurriculumTopic",
+    "LearningOutcome",
+    "QuestionPattern",
+    "UploadedDocument",
 ]

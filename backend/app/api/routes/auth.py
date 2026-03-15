@@ -9,6 +9,7 @@ from ...core.database import get_db
 from ...core.security import get_password_hash, verify_password, create_access_token
 from ...models.user import User, StudentProfile, TeacherProfile, UserRole
 from ...schemas.user import UserRegister, LoginRequest, TokenResponse, UserResponse
+from ...schemas.exam import TeacherPreferenceUpdate, TeacherPreferenceResponse
 from ..deps import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -87,3 +88,61 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
 async def get_me(user: User = Depends(get_current_user)):
     """Get current user info."""
     return user
+
+
+@router.get("/me/preferences", response_model=TeacherPreferenceResponse)
+async def get_preferences(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get teacher preferences including AI assistance level."""
+    if user.role != UserRole.TEACHER and user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Teacher access required")
+
+    result = await db.execute(
+        select(TeacherProfile).where(TeacherProfile.user_id == user.id)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    return TeacherPreferenceResponse(
+        ai_assistance_level=profile.ai_assistance_level or "guided",
+        board=profile.board,
+        subjects=json.loads(profile.subjects) if profile.subjects else None,
+        classes=json.loads(profile.classes) if profile.classes else None,
+    )
+
+
+@router.patch("/me/preferences", response_model=TeacherPreferenceResponse)
+async def update_preferences(
+    data: TeacherPreferenceUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update teacher preferences (AI assistance level)."""
+    if user.role != UserRole.TEACHER and user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Teacher access required")
+
+    if data.ai_assistance_level not in ("auto", "guided", "expert"):
+        raise HTTPException(
+            status_code=400,
+            detail="ai_assistance_level must be 'auto', 'guided', or 'expert'",
+        )
+
+    result = await db.execute(
+        select(TeacherProfile).where(TeacherProfile.user_id == user.id)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    profile.ai_assistance_level = data.ai_assistance_level
+    await db.flush()
+
+    return TeacherPreferenceResponse(
+        ai_assistance_level=profile.ai_assistance_level,
+        board=profile.board,
+        subjects=json.loads(profile.subjects) if profile.subjects else None,
+        classes=json.loads(profile.classes) if profile.classes else None,
+    )

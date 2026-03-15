@@ -82,6 +82,79 @@ class QuestionFilter(BaseModel):
     blooms_level: Optional[str] = None
 
 
+# ── AI Question Generation ──
+
+
+class QuestionGenerateRequest(BaseModel):
+    topic: str
+    subject: str
+    board: str = "CBSE"
+    class_grade: int = 10
+    difficulty: str = "medium"
+    question_type: str = "short_answer"
+    count: int = 5
+    chapter: Optional[str] = None
+    research_context: Optional[str] = None
+    teacher_notes: Optional[str] = None
+
+
+class BulkGenerateRequest(BaseModel):
+    subject: str
+    board: str = "CBSE"
+    class_grade: int = 10
+    chapter: str
+    question_distribution: dict[str, int]  # {"mcq": 5, "short_answer": 3, ...}
+
+
+class GeneratedQuestionResponse(BaseModel):
+    question_text: str
+    question_type: str
+    marks: float
+    difficulty: str
+    blooms_level: str
+    topic: str
+    subtopic: Optional[str] = None
+    model_answer: str
+    answer_keywords: list[str] = []
+    mcq_options: Optional[dict] = None
+    correct_option: Optional[str] = None
+    marking_scheme: Optional[list[dict]] = None
+    source: Optional[str] = None
+
+
+class GenerateResponse(BaseModel):
+    questions: list[GeneratedQuestionResponse]
+    count: int
+
+
+class ApproveQuestionItem(BaseModel):
+    """Individual question in an approval request, with optional provenance."""
+    bank_id: int
+    question_type: str
+    question_text: str
+    marks: float
+    difficulty: str = "medium"
+    blooms_level: str = "understand"
+    topic: str
+    subtopic: Optional[str] = None
+    model_answer: Optional[str] = None
+    answer_keywords: Optional[list[str]] = None
+    mcq_options: Optional[dict] = None
+    correct_option: Optional[str] = None
+    marking_scheme: Optional[list[dict]] = None
+    source: Optional[str] = None
+    # Provenance fields
+    original_ai_text: Optional[str] = None
+    teacher_edited: bool = False
+    quality_rating: Optional[int] = None
+    generation_context: Optional[str] = None
+
+
+class ApproveQuestionsRequest(BaseModel):
+    bank_id: int
+    questions: list[ApproveQuestionItem]
+
+
 # ── Question Paper ──
 
 
@@ -178,3 +251,125 @@ class ExamSessionResponse(BaseModel):
 class ExamSessionDetail(ExamSessionResponse):
     paper: QuestionPaperResponse
     answers: list[dict] = []
+
+
+# ── Curriculum Registry ──
+
+
+class ChapterSummary(BaseModel):
+    name: str
+    textbook_ref: str
+    topic_count: int
+
+
+class ChapterDetail(BaseModel):
+    name: str
+    textbook_ref: str
+    topics: list[str]
+    learning_outcomes: list[str]
+    question_pattern_notes: str
+    suggested_distribution: dict[str, int]
+
+
+class CurriculumResponse(BaseModel):
+    type: str  # "boards", "classes", "subjects", "chapters", "chapter_detail"
+    data: object  # list[str] | list[int] | list[ChapterSummary] | ChapterDetail | None
+
+
+# ── Syllabus Research ──
+
+
+class ResearchRequest(BaseModel):
+    board: str
+    class_grade: int
+    subject: str
+    chapter: str
+    teacher_notes: Optional[str] = None
+
+
+class WebSource(BaseModel):
+    title: str
+    url: str
+    snippet: str
+
+
+class DocumentSource(BaseModel):
+    filename: str
+    content_type: str
+    excerpt: Optional[str] = None
+
+
+class ResearchResult(BaseModel):
+    chapter_info: dict
+    generation_brief: str
+    suggested_distribution: dict[str, int]
+    key_concepts: list[str]
+    misconceptions: list[str]
+    teacher_notes_incorporated: Optional[str] = None
+    web_sources: list[WebSource] = []
+    document_sources: list[DocumentSource] = []
+
+
+# ── Regeneration ──
+
+
+class RegenerateRequest(BaseModel):
+    original_question: dict
+    feedback: str
+    research_context: Optional[str] = None
+    board: str = "CBSE"
+    class_grade: int = 10
+    subject: str = ""
+    chapter: str = ""
+
+
+# ── Teacher Preferences ──
+
+
+class TeacherPreferenceUpdate(BaseModel):
+    ai_assistance_level: str  # "auto", "guided", "expert"
+
+
+class TeacherPreferenceResponse(BaseModel):
+    ai_assistance_level: str
+    board: Optional[str] = None
+    subjects: Optional[list[str]] = None
+    classes: Optional[list[int]] = None
+
+
+# ── Paper Assembly ──
+
+
+class SectionConfig(BaseModel):
+    name: str
+    marks: float
+    question_types: Optional[list[str]] = None
+
+
+class PaperAssemblyRequest(BaseModel):
+    board: str
+    class_grade: int
+    subject: str
+    chapters: list[str]
+    total_marks: float
+    duration_minutes: int
+    sections: list[SectionConfig]
+    question_type_distribution: Optional[dict[str, int]] = None
+    title: Optional[str] = None
+    exam_type: Optional[str] = None
+
+
+class CoverageAnalysis(BaseModel):
+    topic_coverage: dict[str, float]  # topic -> coverage percentage
+    blooms_distribution: dict[str, int]  # blooms level -> count
+    difficulty_distribution: dict[str, int]  # difficulty -> count
+    chapter_distribution: dict[str, int]  # chapter -> count
+
+
+class PaperAssemblyResult(BaseModel):
+    paper: dict  # title, sections, instructions
+    questions: list[dict]  # ordered questions with section assignments
+    coverage_analysis: CoverageAnalysis
+    gaps_filled: int  # how many new questions were generated
+    total_questions: int
+    from_bank: int

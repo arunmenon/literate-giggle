@@ -17,6 +17,7 @@ from ...schemas.learning import (
 )
 from ...services.learning_plan_generator import (
     generate_learning_plan, get_mastery_from_score,
+    get_topics_due_for_review, generate_practice_set,
 )
 from ..deps import get_current_user, get_current_student
 
@@ -191,6 +192,28 @@ async def get_progress_summary(
         active_plans=[_plan_to_response(p) for p in plans],
         score_trend=score_trend[-20:],  # Last 20 data points
     )
+
+
+@router.get("/next-review", response_model=list[dict])
+async def get_next_review_topics(
+    subject: str = None,
+    db: AsyncSession = Depends(get_db),
+    student: StudentProfile = Depends(get_current_student),
+):
+    """Get topics due for review today based on spaced repetition scheduling."""
+    return await get_topics_due_for_review(db, student.id, subject)
+
+
+@router.post("/practice-set", response_model=list[dict])
+async def generate_practice_set_endpoint(
+    subject: str = None,
+    topic: str = None,
+    count: int = 10,
+    db: AsyncSession = Depends(get_db),
+    student: StudentProfile = Depends(get_current_student),
+):
+    """Generate a targeted practice quiz from weak topics."""
+    return await generate_practice_set(db, student.id, subject, topic, count)
 
 
 def _plan_to_response(plan: LearningPlan) -> LearningPlanResponse:

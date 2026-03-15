@@ -65,5 +65,6 @@ class TeacherProfile(Base):
     classes = Column(Text)  # JSON list of class grades
     institution = Column(String(255))
     employee_id = Column(String(50))
+    ai_assistance_level = Column(String(20), default="guided")  # "auto", "guided", "expert"
 
     user = relationship("User", back_populates="teacher_profile")

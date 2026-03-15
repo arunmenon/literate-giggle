@@ -100,6 +100,11 @@ class Question(Base):
     is_active = Column(Boolean, default=True)
     times_used = Column(Integer, default=0)
     avg_score_pct = Column(Float)  # Average score when this question is attempted
+    # Provenance (AI generation tracking)
+    original_ai_text = Column(Text, nullable=True)  # Original text before teacher edits
+    teacher_edited = Column(Boolean, default=False)  # Whether teacher modified AI output
+    quality_rating = Column(Integer, nullable=True)  # 1-5 star rating from teacher
+    generation_context = Column(Text, nullable=True)  # JSON: research context used for generation
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     bank = relationship("QuestionBank", back_populates="questions")
@@ -205,6 +210,8 @@ class StudentAnswer(Base):
     selected_option = Column(String(10))  # For MCQ
     time_spent_seconds = Column(Integer, default=0)
     is_flagged = Column(Boolean, default=False)  # Student flagged for review
+    hint_count = Column(Integer, default=0)  # Number of hints requested
+    hints_used = Column(JSON)  # List of hint texts provided
     auto_saved_at = Column(DateTime)
     submitted_at = Column(DateTime)
 

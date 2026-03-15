@@ -8,5 +8,6 @@ bcrypt==4.0.1
 PyJWT==2.10.1
 python-multipart==0.0.12
 
-# Optional: AI-powered evaluation (uncomment to enable)
-# anthropic>=0.40.0
+openai>=1.0.0
+httpx>=0.27.0
+pymupdf4llm>=0.0.17

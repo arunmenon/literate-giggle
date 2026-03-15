@@ -1,184 +1,62 @@
 """
 Learning Plan Generator - Creates personalized study plans from evaluation data.
+
+Uses AI to generate personalized study recommendations based on specific wrong answers,
+with spaced repetition scheduling for topic review.
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.evaluation import Evaluation
+from ..models.evaluation import Evaluation, QuestionEvaluation
 from ..models.learning import (
     LearningPlan, LearningObjective, TopicMastery,
     MasteryLevel, ObjectiveStatus,
 )
-from ..models.exam import ExamSession
+from ..models.exam import ExamSession, StudentAnswer, PaperQuestion, Question
+from .ai_service import ai_service
+
+logger = logging.getLogger(__name__)
 
 
-# CBSE/ICSE curriculum topics by subject (extensible)
-CURRICULUM_RESOURCES = {
-    "Mathematics": {
-        "Algebra": [
-            {"type": "concept", "title": "Review algebraic identities and equations"},
-            {"type": "practice", "title": "Solve 20 practice problems daily"},
-            {"type": "video", "title": "Khan Academy - Algebra fundamentals"},
-        ],
-        "Polynomials": [
-            {"type": "concept", "title": "Review zeroes and factorization of polynomials"},
-            {"type": "practice", "title": "Practice finding zeroes and verifying relationships"},
-        ],
-        "Quadratic Equations": [
-            {"type": "concept", "title": "Master factorization, completing square, and quadratic formula"},
-            {"type": "practice", "title": "Solve discriminant-based and word problems"},
-        ],
-        "Arithmetic Progressions": [
-            {"type": "concept", "title": "Review nth term and sum formulas"},
-            {"type": "practice", "title": "Solve AP word problems from board papers"},
-        ],
-        "Linear Equations": [
-            {"type": "concept", "title": "Review graphical and algebraic methods"},
-            {"type": "practice", "title": "Practice consistency conditions and word problems"},
-        ],
-        "Coordinate Geometry": [
-            {"type": "concept", "title": "Review distance, section, and area formulas"},
-            {"type": "practice", "title": "Solve coordinate geometry numerical problems"},
-        ],
-        "Geometry": [
-            {"type": "concept", "title": "Review theorems and proofs"},
-            {"type": "practice", "title": "Practice constructions and proofs"},
-            {"type": "video", "title": "Geometry visualization exercises"},
-        ],
-        "Triangles": [
-            {"type": "concept", "title": "Review similarity and congruence theorems"},
-            {"type": "practice", "title": "Practice BPT and Pythagoras theorem problems"},
-        ],
-        "Trigonometry": [
-            {"type": "concept", "title": "Memorize trigonometric ratios and identities"},
-            {"type": "practice", "title": "Solve height and distance problems"},
-        ],
-        "Statistics": [
-            {"type": "concept", "title": "Review mean, median, mode for grouped data"},
-            {"type": "practice", "title": "Practice data interpretation and ogive problems"},
-        ],
-        "Real Numbers": [
-            {"type": "concept", "title": "Review Euclid's division and fundamental theorem of arithmetic"},
-            {"type": "practice", "title": "Practice HCF, LCM, and irrationality proofs"},
-        ],
-        "Surface Areas and Volumes": [
-            {"type": "concept", "title": "Review formulas for combined solids"},
-            {"type": "practice", "title": "Solve conversion of solids problems"},
-        ],
-        "Sets": [
-            {"type": "concept", "title": "Review set operations - union, intersection, complement"},
-            {"type": "practice", "title": "Practice Venn diagram problems"},
-        ],
-        "Matrices": [
-            {"type": "concept", "title": "Review matrix operations and determinants"},
-            {"type": "practice", "title": "Solve simultaneous equations using matrices"},
-        ],
-        "Mensuration": [
-            {"type": "concept", "title": "Review area and volume formulas for 3D shapes"},
-            {"type": "practice", "title": "Practice combined solids problems"},
-        ],
-        "Number Systems": [
-            {"type": "concept", "title": "Review rational and irrational numbers"},
-            {"type": "practice", "title": "Practice representation on number line"},
-        ],
-        "Heron's Formula": [
-            {"type": "concept", "title": "Review Heron's formula and applications"},
-            {"type": "practice", "title": "Solve area problems for irregular shapes"},
-        ],
-    },
-    "Science": {
-        "Electricity": [
-            {"type": "concept", "title": "Review Ohm's law, resistance, and circuits"},
-            {"type": "practice", "title": "Solve circuit and power numerical problems"},
-            {"type": "experiment", "title": "Review Ohm's law verification experiment"},
-        ],
-        "Light - Reflection and Refraction": [
-            {"type": "concept", "title": "Review mirror and lens formulas, sign convention"},
-            {"type": "practice", "title": "Practice ray diagram and numerical problems"},
-        ],
-        "Chemical Reactions and Equations": [
-            {"type": "concept", "title": "Review types of reactions and balancing"},
-            {"type": "practice", "title": "Practice balancing equations and identifying reaction types"},
-        ],
-        "Acids, Bases and Salts": [
-            {"type": "concept", "title": "Review pH scale, indicators, and reactions"},
-            {"type": "practice", "title": "Practice salt preparation and property questions"},
-        ],
-        "Life Processes": [
-            {"type": "concept", "title": "Review nutrition, respiration, transportation, excretion"},
-            {"type": "practice", "title": "Practice diagram-based questions"},
-            {"type": "experiment", "title": "Review photosynthesis and respiration experiments"},
-        ],
-        "Physics": [
-            {"type": "concept", "title": "Review formulas and laws"},
-            {"type": "practice", "title": "Solve numerical problems"},
-            {"type": "experiment", "title": "Review lab experiments"},
-        ],
-        "Chemistry": [
-            {"type": "concept", "title": "Review reactions, equations, and periodic table"},
-            {"type": "practice", "title": "Practice balancing equations and reactions"},
-        ],
-        "Biology": [
-            {"type": "concept", "title": "Review diagrams and processes"},
-            {"type": "practice", "title": "Practice labeling diagrams"},
-        ],
-        "Microorganisms": [
-            {"type": "concept", "title": "Review types of microorganisms and their uses"},
-            {"type": "practice", "title": "Practice questions on fermentation and diseases"},
-        ],
-        "Force and Pressure": [
-            {"type": "concept", "title": "Review types of forces and pressure concepts"},
-            {"type": "practice", "title": "Solve pressure calculation problems"},
-        ],
-        "Synthetic Fibres and Plastics": [
-            {"type": "concept", "title": "Review types and properties of synthetic fibres"},
-            {"type": "practice", "title": "Compare natural and synthetic materials"},
-        ],
-        "Combustion and Flame": [
-            {"type": "concept", "title": "Review conditions for combustion and types of flames"},
-            {"type": "practice", "title": "Practice fire safety and fuel efficiency questions"},
-        ],
-    },
-    "English": {
-        "Grammar": [
-            {"type": "concept", "title": "Review grammar rules - tenses, voice, speech"},
-            {"type": "practice", "title": "Daily grammar exercises and transformations"},
-        ],
-        "Writing": [
-            {"type": "concept", "title": "Study letter, essay, and story writing formats"},
-            {"type": "practice", "title": "Write one composition daily"},
-        ],
-        "Literature": [
-            {"type": "concept", "title": "Review character analysis and literary devices"},
-            {"type": "practice", "title": "Practice comprehension and extract-based questions"},
-        ],
-        "Reading Comprehension": [
-            {"type": "concept", "title": "Review strategies for unseen passages"},
-            {"type": "practice", "title": "Practice 2 passages daily with timed attempts"},
-        ],
-    },
-    "Social Studies": {
-        "History": [
-            {"type": "concept", "title": "Review key events, dates, and personalities"},
-            {"type": "practice", "title": "Practice source-based and analytical questions"},
-        ],
-        "Geography": [
-            {"type": "concept", "title": "Review maps, resources, and climate concepts"},
-            {"type": "practice", "title": "Practice map-based and data questions"},
-        ],
-        "Civics": [
-            {"type": "concept", "title": "Review constitutional provisions and governance"},
-            {"type": "practice", "title": "Practice case-study and analytical questions"},
-        ],
-        "Economics": [
-            {"type": "concept", "title": "Review sectors, development indicators, and GDP"},
-            {"type": "practice", "title": "Practice data interpretation and comparison questions"},
-        ],
-    },
+# ── Pydantic models for AI-generated resources ──
+
+
+class StudyResource(BaseModel):
+    type: str = Field(description="Resource type: concept, practice, video, experiment, revision")
+    title: str
+    description: str = ""
+    priority: int = Field(ge=1, le=5, default=3, description="1=highest priority")
+
+
+class TopicStudyPlan(BaseModel):
+    topic: str
+    misconceptions: list[str] = []
+    resources: list[StudyResource]
+    estimated_hours: float = Field(ge=0.5, default=2.0)
+    study_approach: str = ""
+
+
+class AILearningPlan(BaseModel):
+    topics: list[TopicStudyPlan]
+    overall_strategy: str = ""
+    motivational_note: str = ""
+
+
+# ── Spaced Repetition ──
+
+# Intervals in days based on mastery level
+SPACED_REPETITION_INTERVALS = {
+    MasteryLevel.NOT_STARTED: 1,
+    MasteryLevel.BEGINNER: 2,
+    MasteryLevel.DEVELOPING: 4,
+    MasteryLevel.PROFICIENT: 7,
+    MasteryLevel.MASTERED: 14,
 }
 
 
@@ -195,20 +73,103 @@ def get_mastery_from_score(score_pct: float) -> MasteryLevel:
     return MasteryLevel.NOT_STARTED
 
 
-def get_resources_for_topic(subject: str, topic: str) -> list[dict]:
-    """Get learning resources for a topic."""
-    subject_resources = CURRICULUM_RESOURCES.get(subject, {})
-    # Try exact match first, then partial match
-    resources = subject_resources.get(topic)
-    if not resources:
-        for key, val in subject_resources.items():
-            if key.lower() in topic.lower() or topic.lower() in key.lower():
-                resources = val
-                break
-    return resources or [
-        {"type": "concept", "title": f"Review {topic} fundamentals"},
-        {"type": "practice", "title": f"Practice {topic} questions"},
+def calculate_next_review_date(mastery_level: MasteryLevel, last_reviewed: Optional[datetime] = None) -> datetime:
+    """Calculate next review date based on spaced repetition and mastery level."""
+    interval_days = SPACED_REPETITION_INTERVALS.get(mastery_level, 7)
+    base_date = last_reviewed or datetime.now(timezone.utc)
+    return base_date + timedelta(days=interval_days)
+
+
+async def _generate_ai_resources(
+    subject: str,
+    board: str,
+    class_grade: int,
+    weak_topics: list[tuple[str, float, float]],
+    wrong_answers_context: Optional[str] = None,
+) -> Optional[AILearningPlan]:
+    """Use AI to generate personalized study resources for weak topics."""
+    topics_str = "\n".join(
+        f"- {topic}: current score {score:.0f}%, gap to target {gap:.0f}%"
+        for topic, score, gap in weak_topics
+    )
+
+    prompt = f"""Create a personalized study plan for a Class {class_grade} {board} {subject} student.
+
+## Weak Topics (sorted by priority)
+{topics_str}
+
+{f'## Analysis of Wrong Answers{chr(10)}{wrong_answers_context}' if wrong_answers_context else ''}
+
+For each topic, provide:
+1. Specific misconceptions the student likely has (based on their score pattern)
+2. Study resources (concept review, practice problems, video recommendations, experiments)
+3. Estimated study hours needed
+4. Recommended study approach
+
+Also provide:
+- An overall learning strategy
+- A motivational note for the student
+
+Make resources specific to {board} Class {class_grade} {subject} syllabus.
+Keep recommendations practical and actionable."""
+
+    system = (
+        f"You are an expert {board} {subject} tutor for Class {class_grade}. "
+        "You create personalized study plans that address specific learning gaps. "
+        "Your recommendations are practical, specific to the Indian school curriculum, "
+        "and encouraging."
+    )
+
+    return await ai_service.generate_structured(
+        prompt,
+        AILearningPlan,
+        system=system,
+        temperature=0.5,
+    )
+
+
+def _get_fallback_resources(subject: str, topic: str) -> list[dict]:
+    """Fallback resources when AI is unavailable."""
+    return [
+        {"type": "concept", "title": f"Review {topic} fundamentals from your {subject} textbook", "description": "", "priority": 1},
+        {"type": "practice", "title": f"Solve practice problems on {topic}", "description": "", "priority": 2},
+        {"type": "revision", "title": f"Revise key formulas and definitions for {topic}", "description": "", "priority": 3},
     ]
+
+
+async def _get_wrong_answers_context(
+    db: AsyncSession,
+    student_id: int,
+    limit: int = 20,
+) -> Optional[str]:
+    """Fetch recent wrong answers to provide context for AI-generated study plans."""
+    result = await db.execute(
+        select(QuestionEvaluation, StudentAnswer, Question)
+        .join(StudentAnswer, QuestionEvaluation.student_answer_id == StudentAnswer.id)
+        .join(PaperQuestion, StudentAnswer.paper_question_id == PaperQuestion.id)
+        .join(Question, PaperQuestion.question_id == Question.id)
+        .join(ExamSession, StudentAnswer.session_id == ExamSession.id)
+        .where(
+            ExamSession.student_id == student_id,
+            QuestionEvaluation.marks_obtained < QuestionEvaluation.marks_possible * 0.5,
+        )
+        .order_by(QuestionEvaluation.id.desc())
+        .limit(limit)
+    )
+    rows = result.all()
+
+    if not rows:
+        return None
+
+    context_parts = []
+    for qe, sa, q in rows:
+        context_parts.append(
+            f"- Topic: {q.topic} | Question: {q.question_text[:100]}... | "
+            f"Score: {qe.marks_obtained}/{qe.marks_possible} | "
+            f"Feedback: {qe.feedback or 'N/A'}"
+        )
+
+    return "\n".join(context_parts)
 
 
 async def generate_learning_plan(
@@ -258,13 +219,30 @@ async def generate_learning_plan(
 
     # If no evaluation data, create a general plan
     if not weak_topics:
-        subject_topics = CURRICULUM_RESOURCES.get(subject, {})
-        weak_topics = [(topic, 0, 100) for topic in subject_topics.keys()]
+        weak_topics = [(subject, 0, 100)]
+
+    # Try AI-generated resources first
+    wrong_answers_context = await _get_wrong_answers_context(db, student_id)
+    ai_plan = await _generate_ai_resources(
+        subject, board, class_grade, weak_topics, wrong_answers_context
+    )
 
     # Estimate study hours
-    estimated_hours = sum(gap * 0.5 for _, _, gap in weak_topics)
+    if ai_plan:
+        estimated_hours = sum(tp.estimated_hours for tp in ai_plan.topics)
+    else:
+        estimated_hours = sum(gap * 0.5 for _, _, gap in weak_topics)
+
     if not target_date:
         target_date = datetime.now(timezone.utc) + timedelta(days=30)
+
+    # Build description
+    description_parts = [
+        f"Personalized study plan targeting {target_score}% in {subject}.",
+        f"Focus areas: {', '.join(t[0] for t in weak_topics[:5])}.",
+    ]
+    if ai_plan and ai_plan.overall_strategy:
+        description_parts.append(ai_plan.overall_strategy)
 
     # Create the plan
     plan = LearningPlan(
@@ -273,10 +251,7 @@ async def generate_learning_plan(
         board=board,
         class_grade=class_grade,
         title=f"{subject} Improvement Plan - {board} Class {class_grade}",
-        description=(
-            f"Personalized study plan targeting {target_score}% in {subject}. "
-            f"Focus areas: {', '.join(t[0] for t in weak_topics[:5])}."
-        ),
+        description=" ".join(description_parts),
         focus_areas=[t[0] for t in weak_topics],
         target_score=target_score,
         current_score=current_avg,
@@ -288,14 +263,27 @@ async def generate_learning_plan(
     await db.flush()
 
     # Create objectives for each weak topic
+    ai_topic_map = {}
+    if ai_plan:
+        ai_topic_map = {tp.topic.lower(): tp for tp in ai_plan.topics}
+
     for i, (topic, current_pct, gap) in enumerate(weak_topics):
-        resources = get_resources_for_topic(subject, topic)
         mastery = get_mastery_from_score(current_pct)
+
+        # Try to find AI-generated resources for this topic
+        ai_topic = ai_topic_map.get(topic.lower())
+
+        if ai_topic:
+            resources = [r.model_dump() for r in ai_topic.resources]
+            description = ai_topic.study_approach or f"Improve {topic} from {current_pct:.0f}% to {target_score:.0f}%"
+        else:
+            resources = _get_fallback_resources(subject, topic)
+            description = f"Improve {topic} from {current_pct:.0f}% to {target_score:.0f}%"
 
         objective = LearningObjective(
             plan_id=plan.id,
             topic=topic,
-            description=f"Improve {topic} from {current_pct:.0f}% to {target_score:.0f}%",
+            description=description,
             priority=i + 1,
             status=ObjectiveStatus.PENDING,
             resources=resources,
@@ -375,3 +363,105 @@ async def update_topic_mastery(
 
     await db.flush()
     return mastery
+
+
+async def get_topics_due_for_review(
+    db: AsyncSession,
+    student_id: int,
+    subject: Optional[str] = None,
+) -> list[dict]:
+    """Get topics that are due for review based on spaced repetition scheduling."""
+    query = select(TopicMastery).where(TopicMastery.student_id == student_id)
+    if subject:
+        query = query.where(TopicMastery.subject == subject)
+
+    result = await db.execute(query)
+    masteries = result.scalars().all()
+
+    due_topics = []
+    now = datetime.now(timezone.utc)
+
+    for mastery in masteries:
+        last_reviewed = mastery.updated_at or now
+        next_review = calculate_next_review_date(mastery.mastery_level, last_reviewed)
+
+        if next_review <= now:
+            due_topics.append({
+                "topic": mastery.topic,
+                "subject": mastery.subject,
+                "board": mastery.board,
+                "class_grade": mastery.class_grade,
+                "mastery_level": mastery.mastery_level.value,
+                "avg_score_pct": mastery.avg_score_pct,
+                "last_score_pct": mastery.last_score_pct,
+                "trend": mastery.trend,
+                "days_overdue": (now - next_review).days,
+                "next_review_date": next_review.isoformat(),
+            })
+
+    # Sort by overdue days (most overdue first)
+    due_topics.sort(key=lambda x: x["days_overdue"], reverse=True)
+    return due_topics
+
+
+async def generate_practice_set(
+    db: AsyncSession,
+    student_id: int,
+    subject: Optional[str] = None,
+    topic: Optional[str] = None,
+    count: int = 10,
+) -> list[dict]:
+    """
+    Generate a targeted practice quiz from weak topics.
+
+    Selects questions from the question bank that match the student's weak areas.
+    """
+    # Find weak topics if not specified
+    if not topic:
+        query = (
+            select(TopicMastery)
+            .where(TopicMastery.student_id == student_id)
+            .order_by(TopicMastery.avg_score_pct.asc())
+            .limit(3)
+        )
+        if subject:
+            query = query.where(TopicMastery.subject == subject)
+
+        result = await db.execute(query)
+        weak_masteries = result.scalars().all()
+        weak_topic_names = [m.topic for m in weak_masteries]
+    else:
+        weak_topic_names = [topic]
+
+    if not weak_topic_names:
+        return []
+
+    # Fetch questions matching weak topics
+    from ..models.exam import Question as QuestionModel
+    questions_query = (
+        select(QuestionModel)
+        .where(
+            QuestionModel.is_active == True,
+            QuestionModel.topic.in_(weak_topic_names),
+        )
+        .order_by(QuestionModel.avg_score_pct.asc().nullslast())
+        .limit(count)
+    )
+
+    result = await db.execute(questions_query)
+    questions = result.scalars().all()
+
+    return [
+        {
+            "id": q.id,
+            "question_type": q.question_type.value,
+            "question_text": q.question_text,
+            "marks": q.marks,
+            "difficulty": q.difficulty.value,
+            "blooms_level": q.blooms_level.value,
+            "topic": q.topic,
+            "subtopic": q.subtopic,
+            "mcq_options": q.mcq_options,
+        }
+        for q in questions
+    ]

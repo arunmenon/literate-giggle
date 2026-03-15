@@ -90,6 +90,9 @@ class QuestionEvaluation(Base):
     # Improvement hints
     improvement_hint = Column(Text)
     model_answer_comparison = Column(Text)  # How student's answer differs from ideal
+    # AI evaluation metadata
+    confidence = Column(Float)  # AI confidence score 0.0-1.0
+    evaluation_method = Column(String(20))  # "ai" or "rubric"
 
     evaluation = relationship("Evaluation", back_populates="question_evaluations")
     student_answer = relationship("StudentAnswer", back_populates="question_evaluation")

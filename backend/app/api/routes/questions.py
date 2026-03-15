@@ -8,14 +8,27 @@ from typing import Optional
 
 from ...core.database import get_db
 from ...models.user import User
-from ...models.exam import QuestionBank, Question
+from ...models.exam import QuestionBank, Question, QuestionType, DifficultyLevel, BloomsTaxonomy
 from ...schemas.exam import (
     QuestionBankCreate, QuestionBankResponse,
     QuestionCreate, QuestionResponse, QuestionFilter,
+    QuestionGenerateRequest, BulkGenerateRequest,
+    GeneratedQuestionResponse, GenerateResponse,
+    ApproveQuestionsRequest,
 )
+from ...schemas.exam import (
+    CurriculumResponse,
+    ResearchRequest, ResearchResult,
+    RegenerateRequest,
+)
+from ...services.question_generator import generate_questions, generate_bulk_questions
+from ...services.curriculum_registry import CurriculumRegistry
 from ..deps import get_current_user, require_teacher_or_admin
 
 router = APIRouter(prefix="/questions", tags=["Question Bank (Curation)"])
+_registry = CurriculumRegistry()
+
+# Note: _registry methods are now async and require db session
 
 
 # ── Question Banks ──
@@ -82,6 +95,29 @@ async def list_question_banks(
             )
         )
     return responses
+
+
+# ── Curriculum ──
+
+
+@router.get("/curriculum", response_model=CurriculumResponse)
+async def get_curriculum(
+    board: Optional[str] = None,
+    class_grade: Optional[int] = None,
+    subject: Optional[str] = None,
+    chapter: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Get curriculum data with cascading filters."""
+    result = await _registry.get_curriculum(
+        db=db,
+        board=board,
+        class_grade=class_grade,
+        subject=subject,
+        chapter=chapter,
+    )
+    return CurriculumResponse(**result)
 
 
 # ── Questions ──
@@ -174,6 +210,150 @@ async def update_question(
 
     await db.flush()
     return question
+
+
+@router.post("/generate", response_model=GenerateResponse)
+async def generate_questions_endpoint(
+    data: QuestionGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_teacher_or_admin),
+):
+    """Generate questions using AI for teacher review."""
+    questions = await generate_questions(
+        topic=data.topic,
+        subject=data.subject,
+        board=data.board,
+        class_grade=data.class_grade,
+        difficulty=data.difficulty,
+        question_type=data.question_type,
+        count=data.count,
+        chapter=data.chapter,
+        research_context=data.research_context,
+        teacher_notes=data.teacher_notes,
+    )
+
+    if questions is None:
+        raise HTTPException(
+            status_code=503,
+            detail="AI service unavailable. Please set OPENAI_API_KEY.",
+        )
+
+    generated = [GeneratedQuestionResponse(**q) for q in questions]
+    return GenerateResponse(questions=generated, count=len(generated))
+
+
+@router.post("/generate/bulk", response_model=GenerateResponse)
+async def bulk_generate_questions_endpoint(
+    data: BulkGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_teacher_or_admin),
+):
+    """Bulk generate questions across multiple types for a chapter."""
+    questions = await generate_bulk_questions(
+        subject=data.subject,
+        board=data.board,
+        class_grade=data.class_grade,
+        chapter=data.chapter,
+        question_distribution=data.question_distribution,
+    )
+
+    if questions is None:
+        raise HTTPException(
+            status_code=503,
+            detail="AI service unavailable. Please set OPENAI_API_KEY.",
+        )
+
+    generated = [GeneratedQuestionResponse(**q) for q in questions]
+    return GenerateResponse(questions=generated, count=len(generated))
+
+
+@router.post("/generate/approve", response_model=list[QuestionResponse], status_code=201)
+async def approve_generated_questions(
+    data: ApproveQuestionsRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_teacher_or_admin),
+):
+    """Approve and save AI-generated questions to a question bank."""
+    bank = await db.get(QuestionBank, data.bank_id)
+    if not bank:
+        raise HTTPException(status_code=404, detail="Question bank not found")
+
+    saved_questions = []
+    for question_data in data.questions:
+        q_dict = question_data.model_dump()
+        if q_dict.get("blooms_level"):
+            q_dict["blooms_level"] = BloomsTaxonomy[q_dict["blooms_level"].upper()]
+        if q_dict.get("difficulty"):
+            q_dict["difficulty"] = DifficultyLevel[q_dict["difficulty"].upper()]
+        if q_dict.get("question_type"):
+            q_dict["question_type"] = QuestionType[q_dict["question_type"].upper().replace(" ", "_")]
+        # Ensure provenance fields are preserved
+        q_dict.setdefault("original_ai_text", None)
+        q_dict.setdefault("teacher_edited", False)
+        q_dict.setdefault("quality_rating", None)
+        q_dict.setdefault("generation_context", None)
+        question = Question(**q_dict)
+        question.bank_id = data.bank_id
+        db.add(question)
+        await db.flush()
+        saved_questions.append(question)
+
+    return saved_questions
+
+
+@router.post("/generate/regenerate", response_model=GeneratedQuestionResponse)
+async def regenerate_question_endpoint(
+    data: RegenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_teacher_or_admin),
+):
+    """Regenerate a single question with teacher feedback."""
+    from ...services.question_generator import regenerate_question
+
+    result = await regenerate_question(
+        original_question=data.original_question,
+        feedback=data.feedback,
+        research_context=data.research_context,
+        board=data.board,
+        class_grade=data.class_grade,
+        subject=data.subject,
+        chapter=data.chapter,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=503,
+            detail="AI service unavailable. Please set OPENAI_API_KEY.",
+        )
+
+    return GeneratedQuestionResponse(**result)
+
+
+@router.post("/research", response_model=ResearchResult)
+async def research_chapter_endpoint(
+    data: ResearchRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_teacher_or_admin),
+):
+    """Research a chapter for grounded question generation."""
+    from ...services.syllabus_researcher import research_chapter
+
+    result = await research_chapter(
+        board=data.board,
+        class_grade=data.class_grade,
+        subject=data.subject,
+        chapter=data.chapter,
+        teacher_notes=data.teacher_notes,
+        db=db,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Chapter not found in curriculum registry.",
+        )
+
+    return result
 
 
 @router.delete("/{question_id}", status_code=204)

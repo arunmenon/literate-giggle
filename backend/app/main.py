@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .core.config import settings
 from .core.database import init_db
-from .api.routes import auth, questions, papers, exams, evaluations, learning, dashboard
+from .api.routes import auth, questions, papers, exams, evaluations, learning, dashboard, ai, curriculum
 
 
 @asynccontextmanager
@@ -44,6 +44,8 @@ app.include_router(exams.router, prefix="/api")
 app.include_router(evaluations.router, prefix="/api")
 app.include_router(learning.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
+app.include_router(ai.router, prefix="/api")
+app.include_router(curriculum.router, prefix="/api")
 
 
 @app.get("/api/health")

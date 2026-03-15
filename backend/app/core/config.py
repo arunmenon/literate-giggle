@@ -17,8 +17,16 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
 
-    # AI Evaluation (optional - works without it using rubric-based scoring)
-    ANTHROPIC_API_KEY: Optional[str] = None
+    # Web Research
+    SERPER_API_KEY: Optional[str] = None
+
+    # AI Configuration
+    OPENAI_API_KEY: Optional[str] = None
+    AI_MODEL_FAST: str = "gpt-4.1-mini"
+    AI_MODEL_STANDARD: str = "gpt-4.1"
+    AI_ENABLED: bool = True
+    AI_MAX_TOKENS_FAST: int = 1024
+    AI_MAX_TOKENS_STANDARD: int = 4096
 
     # Boards and classes config
     SUPPORTED_BOARDS: list[str] = ["CBSE", "ICSE", "State Board"]
