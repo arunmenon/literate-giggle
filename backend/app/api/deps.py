@@ -1,0 +1,55 @@
+"""API dependencies - authentication, current user, etc."""
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from ..core.database import get_db
+from ..core.security import decode_access_token
+from ..models.user import User, StudentProfile, UserRole
+
+security = HTTPBearer()
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    try:
+        payload = decode_access_token(credentials.credentials)
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    result = await db.execute(select(User).where(User.id == int(user_id)))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+    return user
+
+
+async def get_current_student(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StudentProfile:
+    if user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="Student access required")
+    result = await db.execute(
+        select(StudentProfile).where(StudentProfile.user_id == user.id)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Student profile not found")
+    return profile
+
+
+async def require_teacher_or_admin(
+    user: User = Depends(get_current_user),
+) -> User:
+    if user.role not in (UserRole.TEACHER, UserRole.ADMIN):
+        raise HTTPException(status_code=403, detail="Teacher or admin access required")
+    return user

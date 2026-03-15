@@ -1,0 +1,1 @@
+"""ExamIQ - Exam Evaluator Platform."""
