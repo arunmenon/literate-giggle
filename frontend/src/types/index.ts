@@ -217,3 +217,160 @@ export interface StudentDashboard {
   weaknesses: string[];
   active_learning_plans: number;
 }
+
+// ── AI Question Generation ──
+
+export interface GeneratedQuestion {
+  question_text: string;
+  question_type: string;
+  marks: number;
+  difficulty: string;
+  blooms_level: string;
+  topic: string;
+  subtopic?: string;
+  model_answer: string;
+  answer_keywords: string[];
+  mcq_options?: Record<string, string>;
+  correct_option?: string;
+  marking_scheme?: Array<{ step: string; marks: number; keywords?: string[] }>;
+  source?: string;
+}
+
+export interface GenerateResponse {
+  questions: GeneratedQuestion[];
+  count: number;
+}
+
+// ── AI Tutor ──
+
+export interface HintResponse {
+  hint: string;
+  hint_level: number;
+  hint_number: number;
+  marks_penalty_pct: number;
+  total_penalty_pct: number;
+}
+
+export interface ExplainResponse {
+  explanation: string;
+  key_concept: string;
+  common_mistake: string;
+  study_tip: string;
+}
+
+// ── Curriculum-Grounded Generation ──
+
+export interface CurriculumSelection {
+  board: string;
+  class_grade: number;
+  subject: string;
+  chapter: string;
+  topics?: string[];
+}
+
+export interface ChapterDetail {
+  chapter_name: string;
+  textbook_ref: string;
+  topics: string[];
+  learning_outcomes: string[];
+  question_patterns: string;
+  suggested_distribution: Record<string, number>;
+}
+
+export interface ResearchResult {
+  chapter_info: ChapterDetail;
+  generation_brief: string;
+  suggested_distribution: Record<string, number>;
+  key_concepts: string[];
+  misconceptions: string[];
+  teacher_notes_incorporated?: string;
+  web_sources?: Array<{ title: string; url: string; snippet: string }>;
+  document_sources?: Array<{ filename: string; content_type: string }>;
+}
+
+export interface TeacherPreferences {
+  ai_assistance_level: "auto" | "guided" | "expert";
+}
+
+export interface PaperAssemblyRequest {
+  board: string;
+  class_grade: number;
+  subject: string;
+  chapters: string[];
+  total_marks: number;
+  duration_minutes: number;
+  exam_type?: string;
+  sections?: Array<{ name: string; marks: number }>;
+}
+
+export interface PaperAssemblyResult {
+  paper: { title: string; sections: any[]; instructions: string };
+  questions: Array<{
+    question: any;
+    section: string;
+    order: number;
+    source: string;
+  }>;
+  coverage_analysis: {
+    topic_coverage: Record<string, number>;
+    blooms_distribution: Record<string, number>;
+    difficulty_distribution: Record<string, number>;
+  };
+  gaps_filled: number;
+}
+
+// ── Curriculum DB ──
+
+export interface CurriculumBoard {
+  id: number;
+  code: string;
+  name: string;
+}
+
+export interface CurriculumSubjectInfo {
+  id: number;
+  code: string;
+  name: string;
+  class_grade: number;
+  textbook_name?: string;
+}
+
+export interface CurriculumChapterInfo {
+  id: number;
+  number: number;
+  name: string;
+  textbook_reference?: string;
+  marks_weightage?: number;
+  topic_count: number;
+}
+
+export interface CurriculumTopicInfo {
+  id: number;
+  name: string;
+  description?: string;
+}
+
+export interface LearningOutcomeInfo {
+  id: number;
+  code: string;
+  description: string;
+  bloom_level?: string;
+}
+
+// ── Uploaded Documents ──
+
+export interface UploadedDocument {
+  id: number;
+  filename: string;
+  content_type: string;
+  chapter_id?: number;
+  extracted_text?: string;
+  extracted_questions?: any[];
+  uploaded_at: string;
+}
+
+export interface PDFUploadResponse {
+  document: UploadedDocument;
+  extracted_text_preview: string;
+  question_count?: number;
+}

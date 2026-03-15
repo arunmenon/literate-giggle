@@ -1,12 +1,44 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { examAPI, paperAPI } from "../services/api";
-import type { QuestionPaper, PaperQuestionDetail, StudentAnswer } from "../types";
+import { examAPI, paperAPI, aiAPI } from "../services/api";
+import type {
+  QuestionPaper,
+  PaperQuestionDetail,
+  StudentAnswer,
+  HintResponse,
+  ExamSession,
+} from "../types";
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  Badge,
+  Textarea,
+  Skeleton,
+  Progress,
+} from "../components/ui";
+import { cn } from "../lib/utils";
+import {
+  Clock,
+  Flag,
+  ChevronLeft,
+  ChevronRight,
+  Keyboard,
+  Lightbulb,
+  CheckCircle,
+  HelpCircle,
+  Send,
+  Brain,
+  Target,
+} from "lucide-react";
 
 const ExamTake: React.FC = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const [paper, setPaper] = useState<QuestionPaper | null>(null);
+  const [session, setSession] = useState<ExamSession | null>(null);
   const [questions, setQuestions] = useState<PaperQuestionDetail[]>([]);
   const [answers, setAnswers] = useState<Record<number, StudentAnswer>>({});
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -15,20 +47,33 @@ const ExamTake: React.FC = () => {
   const timerRef = useRef<any>(null);
   const autoSaveRef = useRef<any>(null);
 
+  // AI Hint state
+  const [hints, setHints] = useState<Record<number, HintResponse[]>>({});
+  const [hintLoading, setHintLoading] = useState(false);
+  const [showHintPanel, setShowHintPanel] = useState(false);
+
+  // Keyboard shortcut visibility
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  // Track which questions had hints used
+  const hintUsedQuestions = new Set(Object.keys(hints).map(Number));
+
   useEffect(() => {
     if (!sessionId) return;
     examAPI
       .get(Number(sessionId))
       .then(async (res) => {
-        const session = res.data;
-        const paperRes = await paperAPI.get(session.paper_id);
+        const sessionData = res.data;
+        setSession(sessionData);
+        const paperRes = await paperAPI.get(sessionData.paper_id);
         setPaper(paperRes.data);
         setQuestions(paperRes.data.questions || []);
-        setTimeLeft(paperRes.data.duration_minutes * 60 - session.time_spent_seconds);
+        setTimeLeft(
+          paperRes.data.duration_minutes * 60 - sessionData.time_spent_seconds,
+        );
 
-        // Load existing answers
         const existing: Record<number, StudentAnswer> = {};
-        for (const a of session.answers || []) {
+        for (const a of sessionData.answers || []) {
           existing[a.paper_question_id] = a;
         }
         setAnswers(existing);
@@ -75,6 +120,36 @@ const ExamTake: React.FC = () => {
     return () => clearInterval(autoSaveRef.current);
   }, [saveAnswers]);
 
+  // Keyboard shortcuts: J/K for next/prev, F to flag
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts when typing in textarea
+      if (
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLInputElement
+      ) {
+        return;
+      }
+
+      switch (e.key.toLowerCase()) {
+        case "j":
+          setCurrentIdx((i) => Math.min(questions.length - 1, i + 1));
+          break;
+        case "k":
+          setCurrentIdx((i) => Math.max(0, i - 1));
+          break;
+        case "f":
+          if (questions[currentIdx]) {
+            toggleFlag(questions[currentIdx].paper_question_id);
+          }
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [questions, currentIdx]);
+
   const updateAnswer = (pqId: number, field: string, value: string) => {
     setAnswers((prev) => ({
       ...prev,
@@ -82,10 +157,28 @@ const ExamTake: React.FC = () => {
     }));
   };
 
+  const toggleFlag = (pqId: number) => {
+    setAnswers((prev) => ({
+      ...prev,
+      [pqId]: {
+        ...prev[pqId],
+        paper_question_id: pqId,
+        is_flagged: !prev[pqId]?.is_flagged,
+      },
+    }));
+    if (sessionId) {
+      examAPI.flag(Number(sessionId), pqId).catch(() => {});
+    }
+  };
+
   const handleSubmit = async () => {
     if (!sessionId) return;
     saveAnswers();
-    if (!window.confirm("Submit this exam? You cannot change answers after submission.")) {
+    if (
+      !window.confirm(
+        "Submit this exam? You cannot change answers after submission.",
+      )
+    ) {
       return;
     }
     try {
@@ -96,252 +189,470 @@ const ExamTake: React.FC = () => {
     }
   };
 
-  if (loading) return <p>Loading exam...</p>;
-  if (!paper || questions.length === 0) return <p>No questions found.</p>;
+  // AI Hint
+  const requestHint = async () => {
+    if (!sessionId || !questions[currentIdx]) return;
+    const pqId = questions[currentIdx].paper_question_id;
+    setHintLoading(true);
+    try {
+      const { data } = await aiAPI.hint({
+        session_id: Number(sessionId),
+        paper_question_id: pqId,
+      });
+      setHints((prev) => ({
+        ...prev,
+        [pqId]: [...(prev[pqId] || []), data],
+      }));
+      setShowHintPanel(true);
+    } catch (err: any) {
+      alert(
+        err.response?.data?.detail ||
+          "Failed to get hint. AI service may be unavailable.",
+      );
+    } finally {
+      setHintLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-16 w-full" />
+        <div className="grid grid-cols-[1fr_260px] gap-4">
+          <Skeleton className="h-96" />
+          <Skeleton className="h-64" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!paper || questions.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <HelpCircle className="h-12 w-12 mx-auto text-muted-foreground/40 mb-3" />
+          <p className="text-muted-foreground">No questions found.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const currentQ = questions[currentIdx];
+  const currentAnswer = answers[currentQ.paper_question_id];
+  const currentHints = hints[currentQ.paper_question_id] || [];
+  const isPractice = session?.is_practice ?? false;
+
   const formatTime = (s: number) =>
     `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
+  const answeredCount = questions.filter(
+    (q) =>
+      !!answers[q.paper_question_id]?.answer_text ||
+      !!answers[q.paper_question_id]?.selected_option,
+  ).length;
+  const progressPct = Math.round((answeredCount / questions.length) * 100);
+
+  const wordCount =
+    currentQ.question_type !== "mcq" && currentAnswer?.answer_text
+      ? currentAnswer.answer_text.trim().split(/\s+/).filter(Boolean).length
+      : 0;
+
   return (
-    <div>
-      {/* Header */}
-      <div style={headerStyle}>
-        <div>
-          <strong>{paper.title}</strong>
-          <span style={{ marginLeft: 16, color: "#7f8c8d", fontSize: 13 }}>
-            {paper.subject} | {paper.total_marks} marks
-          </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div
-            style={{
-              fontSize: 20,
-              fontWeight: "bold",
-              color: timeLeft < 300 ? "#e74c3c" : "#2c3e50",
-            }}
-          >
-            {formatTime(timeLeft)}
+    <div className="space-y-4">
+      {/* Header Bar */}
+      <Card>
+        <CardContent className="py-3 px-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div>
+                <h3 className="font-semibold text-sm">{paper.title}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {paper.subject} | {paper.total_marks} marks
+                  {isPractice && (
+                    <Badge variant="secondary" className="ml-2 text-[10px]">
+                      Practice
+                    </Badge>
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              {/* Progress */}
+              <div className="hidden md:flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {answeredCount}/{questions.length}
+                </span>
+                <Progress value={progressPct} className="w-24 h-2" />
+              </div>
+              {/* Timer */}
+              <div
+                className={cn(
+                  "flex items-center gap-1.5 font-mono text-lg font-bold",
+                  timeLeft < 300
+                    ? "text-destructive"
+                    : timeLeft < 600
+                      ? "text-orange-500"
+                      : "text-foreground",
+                )}
+              >
+                <Clock className="h-4 w-4" />
+                {formatTime(timeLeft)}
+              </div>
+              {/* Keyboard shortcuts toggle */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowShortcuts(!showShortcuts)}
+                title="Keyboard shortcuts"
+              >
+                <Keyboard className="h-4 w-4" />
+              </Button>
+              {/* Submit */}
+              <Button variant="destructive" onClick={handleSubmit}>
+                <Send className="h-4 w-4 mr-2" />
+                Submit
+              </Button>
+            </div>
           </div>
-          <button onClick={handleSubmit} style={submitBtnStyle}>
-            Submit Exam
-          </button>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 240px", gap: 16, marginTop: 16 }}>
-        {/* Question area */}
-        <div style={questionCardStyle}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginBottom: 12,
-            }}
-          >
-            <span style={{ fontWeight: "bold", fontSize: 14 }}>
-              Q{currentIdx + 1} of {questions.length}
-            </span>
-            <span style={{ fontSize: 13, color: "#7f8c8d" }}>
-              {currentQ.marks} marks | {currentQ.difficulty} |{" "}
-              {currentQ.topic}
-            </span>
-          </div>
+      {/* Keyboard shortcuts tooltip */}
+      {showShortcuts && (
+        <Card className="border-dashed">
+          <CardContent className="py-3 px-5">
+            <div className="flex items-center gap-6 text-xs text-muted-foreground">
+              <span>
+                <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">
+                  J
+                </kbd>{" "}
+                Next question
+              </span>
+              <span>
+                <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">
+                  K
+                </kbd>{" "}
+                Previous question
+              </span>
+              <span>
+                <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">
+                  F
+                </kbd>{" "}
+                Flag question
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-          <div
-            style={{ fontSize: 16, lineHeight: 1.6, marginBottom: 20 }}
-          >
-            {currentQ.question_text}
-          </div>
-
-          {/* Answer input */}
-          {currentQ.question_type === "mcq" && currentQ.mcq_options ? (
-            <div>
-              {Object.entries(currentQ.mcq_options).map(([key, val]) => (
-                <label
-                  key={key}
-                  style={{
-                    display: "block",
-                    padding: "10px 16px",
-                    margin: "6px 0",
-                    background:
-                      answers[currentQ.paper_question_id]?.selected_option === key
-                        ? "#d5f5e3"
-                        : "#f8f9fa",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    border: "1px solid #eee",
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name={`q-${currentQ.paper_question_id}`}
-                    checked={
-                      answers[currentQ.paper_question_id]?.selected_option === key
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
+        {/* Question Area */}
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="p-6">
+              {/* Question header */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold">Q{currentIdx + 1}</span>
+                  <span className="text-sm text-muted-foreground">
+                    of {questions.length}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    {currentQ.marks} marks
+                  </Badge>
+                  <Badge
+                    variant={
+                      currentQ.difficulty === "easy"
+                        ? "success"
+                        : currentQ.difficulty === "medium"
+                          ? "warning"
+                          : "destructive"
                     }
-                    onChange={() =>
+                    className="text-xs"
+                  >
+                    {currentQ.difficulty}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs">
+                    {currentQ.topic}
+                  </Badge>
+                  <Button
+                    variant={currentAnswer?.is_flagged ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => toggleFlag(currentQ.paper_question_id)}
+                    className={cn(
+                      currentAnswer?.is_flagged &&
+                        "bg-amber-500 hover:bg-amber-600 text-white",
+                    )}
+                  >
+                    <Flag className="h-3.5 w-3.5 mr-1" />
+                    {currentAnswer?.is_flagged ? "Flagged" : "Flag"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Question text */}
+              <div className="text-base leading-relaxed mb-6">
+                {currentQ.question_text}
+              </div>
+
+              {/* Answer input */}
+              {currentQ.question_type === "mcq" && currentQ.mcq_options ? (
+                <div className="space-y-2">
+                  {Object.entries(currentQ.mcq_options).map(([key, val]) => (
+                    <label
+                      key={key}
+                      className={cn(
+                        "flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-all",
+                        currentAnswer?.selected_option === key
+                          ? "border-primary bg-primary/5 ring-1 ring-primary"
+                          : "border-border hover:border-muted-foreground/30 hover:bg-muted/50",
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name={`q-${currentQ.paper_question_id}`}
+                        checked={currentAnswer?.selected_option === key}
+                        onChange={() =>
+                          updateAnswer(
+                            currentQ.paper_question_id,
+                            "selected_option",
+                            key,
+                          )
+                        }
+                        className="sr-only"
+                      />
+                      <div
+                        className={cn(
+                          "flex-shrink-0 h-6 w-6 rounded-full border-2 flex items-center justify-center text-xs font-semibold",
+                          currentAnswer?.selected_option === key
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-muted-foreground/30 text-muted-foreground",
+                        )}
+                      >
+                        {key.toUpperCase()}
+                      </div>
+                      <span className="text-sm">{val}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Textarea
+                    value={currentAnswer?.answer_text || ""}
+                    onChange={(e) =>
                       updateAnswer(
                         currentQ.paper_question_id,
-                        "selected_option",
-                        key
+                        "answer_text",
+                        e.target.value,
                       )
                     }
-                    style={{ marginRight: 10 }}
+                    placeholder="Type your answer here..."
+                    className={cn(
+                      "resize-y",
+                      currentQ.question_type === "long_answer"
+                        ? "min-h-[200px]"
+                        : "min-h-[80px]",
+                    )}
                   />
-                  <strong>{key.toUpperCase()}.</strong> {val}
-                </label>
-              ))}
-            </div>
-          ) : (
-            <textarea
-              value={answers[currentQ.paper_question_id]?.answer_text || ""}
-              onChange={(e) =>
-                updateAnswer(
-                  currentQ.paper_question_id,
-                  "answer_text",
-                  e.target.value
-                )
-              }
-              placeholder="Type your answer here..."
-              style={{
-                width: "100%",
-                minHeight:
-                  currentQ.question_type === "long_answer" ? 200 : 80,
-                padding: 12,
-                border: "1px solid #ddd",
-                borderRadius: 6,
-                fontSize: 14,
-                resize: "vertical",
-                boxSizing: "border-box",
-              }}
-            />
-          )}
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{wordCount} words</span>
+                    {currentQ.question_type === "long_answer" &&
+                      wordCount < 50 && (
+                        <span className="text-amber-500">
+                          Long answers typically need 100+ words
+                        </span>
+                      )}
+                    {currentQ.question_type === "short_answer" &&
+                      wordCount > 100 && (
+                        <span className="text-amber-500">
+                          Consider being more concise for short answers
+                        </span>
+                      )}
+                  </div>
+                </div>
+              )}
 
-          {/* Navigation */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginTop: 20,
-            }}
-          >
-            <button
-              onClick={() => setCurrentIdx((i) => Math.max(0, i - 1))}
-              disabled={currentIdx === 0}
-              style={navBtnStyle}
-            >
-              Previous
-            </button>
-            <button
-              onClick={() =>
-                setCurrentIdx((i) => Math.min(questions.length - 1, i + 1))
-              }
-              disabled={currentIdx === questions.length - 1}
-              style={navBtnStyle}
-            >
-              Next
-            </button>
-          </div>
+              {/* Navigation */}
+              <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => setCurrentIdx((i) => Math.max(0, i - 1))}
+                  disabled={currentIdx === 0}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+                <div className="flex items-center gap-2">
+                  {/* AI Hint button - only for practice exams */}
+                  {isPractice && (
+                    <Button
+                      variant="outline"
+                      onClick={requestHint}
+                      disabled={hintLoading}
+                      className="text-primary border-primary/30 hover:bg-primary/5"
+                    >
+                      <Lightbulb className="h-4 w-4 mr-1" />
+                      {hintLoading
+                        ? "Thinking..."
+                        : currentHints.length > 0
+                          ? `Hint (${currentHints.length})`
+                          : "Get Hint"}
+                    </Button>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    setCurrentIdx((i) => Math.min(questions.length - 1, i + 1))
+                  }
+                  disabled={currentIdx === questions.length - 1}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Hint Panel */}
+          {showHintPanel && currentHints.length > 0 && (
+            <Card className="border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Lightbulb className="h-4 w-4 text-amber-500" />
+                    <CardTitle className="text-sm">
+                      Hints ({currentHints.length})
+                    </CardTitle>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {currentHints.length > 0 && (
+                      <Badge
+                        variant="outline"
+                        className="text-xs text-amber-600"
+                      >
+                        {
+                          currentHints[currentHints.length - 1]
+                            .total_penalty_pct
+                        }
+                        % marks penalty
+                      </Badge>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowHintPanel(false)}
+                      className="h-6 w-6 p-0"
+                    >
+                      x
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {currentHints.map((hint, i) => (
+                  <div
+                    key={i}
+                    className="text-sm bg-white dark:bg-card rounded-md p-3 border border-amber-100 dark:border-amber-900"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge variant="secondary" className="text-[10px]">
+                        Hint {hint.hint_number} (Level {hint.hint_level})
+                      </Badge>
+                      <span className="text-[10px] text-amber-600">
+                        -{hint.marks_penalty_pct}% marks
+                      </span>
+                    </div>
+                    <p className="text-muted-foreground leading-relaxed">
+                      {hint.hint}
+                    </p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
-        {/* Question palette */}
-        <div style={paletteStyle}>
-          <h4 style={{ marginTop: 0 }}>Question Palette</h4>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(5, 1fr)",
-              gap: 6,
-            }}
-          >
-            {questions.map((q, i) => {
-              const answered = !!answers[q.paper_question_id]?.answer_text ||
-                !!answers[q.paper_question_id]?.selected_option;
-              const flagged = answers[q.paper_question_id]?.is_flagged;
-              return (
-                <button
-                  key={q.paper_question_id}
-                  onClick={() => setCurrentIdx(i)}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 6,
-                    border: i === currentIdx ? "2px solid #3498db" : "1px solid #ddd",
-                    background: answered
-                      ? "#d5f5e3"
-                      : flagged
-                      ? "#fef9e7"
-                      : "white",
-                    cursor: "pointer",
-                    fontWeight: i === currentIdx ? "bold" : "normal",
-                    fontSize: 13,
-                  }}
-                >
-                  {i + 1}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{ marginTop: 12, fontSize: 12, color: "#7f8c8d" }}>
-            <div>
-              <span style={{ background: "#d5f5e3", padding: "2px 8px", borderRadius: 4 }}>
-                &nbsp;
-              </span>{" "}
-              Answered
-            </div>
-            <div style={{ marginTop: 4 }}>
-              <span style={{ background: "white", border: "1px solid #ddd", padding: "2px 8px", borderRadius: 4 }}>
-                &nbsp;
-              </span>{" "}
-              Not answered
-            </div>
-          </div>
+        {/* Question Palette (Sidebar) */}
+        <div className="space-y-4">
+          <Card className="sticky top-4">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Question Palette</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-5 gap-1.5">
+                {questions.map((q, i) => {
+                  const answered =
+                    !!answers[q.paper_question_id]?.answer_text ||
+                    !!answers[q.paper_question_id]?.selected_option;
+                  const flagged = answers[q.paper_question_id]?.is_flagged;
+                  const hasHints = hintUsedQuestions.has(q.paper_question_id);
+
+                  return (
+                    <button
+                      key={q.paper_question_id}
+                      onClick={() => setCurrentIdx(i)}
+                      className={cn(
+                        "relative h-9 w-full rounded-md text-xs font-medium transition-all",
+                        i === currentIdx
+                          ? "ring-2 ring-primary bg-primary text-primary-foreground"
+                          : answered
+                            ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800"
+                            : flagged
+                              ? "bg-amber-50 dark:bg-amber-900/30 text-amber-600 border border-amber-200 dark:border-amber-800"
+                              : "bg-muted text-muted-foreground border border-border hover:border-muted-foreground/30",
+                      )}
+                      type="button"
+                    >
+                      {i + 1}
+                      {flagged && !answered && (
+                        <Flag className="absolute -top-1 -right-1 h-3 w-3 text-amber-500" />
+                      )}
+                      {hasHints && (
+                        <Lightbulb className="absolute -bottom-1 -right-1 h-3 w-3 text-amber-400" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Legend */}
+              <div className="mt-4 space-y-1.5 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 rounded bg-green-100 dark:bg-green-900/30 border border-green-200 dark:border-green-800" />
+                  <span>Answered ({answeredCount})</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 rounded bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800" />
+                  <span>
+                    Flagged (
+                    {
+                      questions.filter(
+                        (q) => answers[q.paper_question_id]?.is_flagged,
+                      ).length
+                    }
+                    )
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 rounded bg-muted border border-border" />
+                  <span>Unanswered ({questions.length - answeredCount})</span>
+                </div>
+                {isPractice && hintUsedQuestions.size > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Lightbulb className="h-3 w-3 text-amber-400" />
+                    <span>Hint used ({hintUsedQuestions.size})</span>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
   );
-};
-
-const headerStyle: React.CSSProperties = {
-  background: "white",
-  padding: "12px 20px",
-  borderRadius: 8,
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-};
-const questionCardStyle: React.CSSProperties = {
-  background: "white",
-  padding: 24,
-  borderRadius: 8,
-  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-};
-const paletteStyle: React.CSSProperties = {
-  background: "white",
-  padding: 16,
-  borderRadius: 8,
-  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-  alignSelf: "start",
-  position: "sticky",
-  top: 16,
-};
-const submitBtnStyle: React.CSSProperties = {
-  padding: "8px 20px",
-  background: "#e74c3c",
-  color: "white",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontWeight: "bold",
-};
-const navBtnStyle: React.CSSProperties = {
-  padding: "8px 20px",
-  background: "#ecf0f1",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontSize: 14,
 };
 
 export default ExamTake;

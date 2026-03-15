@@ -24,7 +24,7 @@ api.interceptors.response.use(
       window.location.href = "/login";
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 export default api;
@@ -36,6 +36,8 @@ export const authAPI = {
   login: (data: { email: string; password: string }) =>
     api.post("/auth/login", data),
   me: () => api.get("/auth/me"),
+  getPreferences: () => api.get("/auth/me/preferences"),
+  updatePreferences: (data: any) => api.patch("/auth/me/preferences", data),
 };
 
 // ── Questions ──
@@ -48,6 +50,14 @@ export const questionAPI = {
   get: (id: number) => api.get(`/questions/${id}`),
   update: (id: number, data: any) => api.put(`/questions/${id}`, data),
   delete: (id: number) => api.delete(`/questions/${id}`),
+  generate: (data: any) => api.post("/questions/generate", data),
+  generateBulk: (data: any) => api.post("/questions/generate/bulk", data),
+  approveGenerated: (data: any) =>
+    api.post("/questions/generate/approve", data),
+  getCurriculum: (params?: any) => api.get("/questions/curriculum", { params }),
+  research: (data: any) => api.post("/questions/research", data),
+  regenerateQuestion: (data: any) =>
+    api.post("/questions/generate/regenerate", data),
 };
 
 // ── Papers ──
@@ -60,6 +70,7 @@ export const paperAPI = {
     api.patch(`/papers/${id}/status`, data),
   addQuestion: (paperId: number, data: any) =>
     api.post(`/papers/${paperId}/questions`, data),
+  assembleWithAI: (data: any) => api.post("/papers/assemble", data),
 };
 
 // ── Exams ──
@@ -103,5 +114,34 @@ export const learningAPI = {
 
 export const dashboardAPI = {
   student: () => api.get("/dashboard/student"),
-  teacherStats: (params?: any) => api.get("/dashboard/teacher/stats", { params }),
+  teacherStats: (params?: any) =>
+    api.get("/dashboard/teacher/stats", { params }),
+};
+
+// ── AI Tutor ──
+
+export const aiAPI = {
+  hint: (data: { session_id: number; paper_question_id: number }) =>
+    api.post("/ai/hint", data),
+  explain: (data: { question_evaluation_id: number }) =>
+    api.post("/ai/explain", data),
+};
+
+// ── Curriculum ──
+
+export const curriculumAPI = {
+  getBoards: () => api.get("/curriculum/boards"),
+  getClasses: (board: string) => api.get(`/curriculum/${board}/classes`),
+  getSubjects: (board: string, classGrade: number) =>
+    api.get(`/curriculum/${board}/${classGrade}/subjects`),
+  getChapters: (board: string, classGrade: number, subject: string) =>
+    api.get(`/curriculum/${board}/${classGrade}/${subject}/chapters`),
+  getChapterDetail: (chapterId: number) =>
+    api.get(`/curriculum/chapters/${chapterId}`),
+  uploadDocument: (formData: FormData) =>
+    api.post("/curriculum/upload", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }),
+  getDocuments: (chapterId?: number) =>
+    api.get("/curriculum/documents", { params: { chapter_id: chapterId } }),
 };

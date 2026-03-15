@@ -2,6 +2,29 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { paperAPI, examAPI } from "../services/api";
 import type { QuestionPaper, ExamSession } from "../types";
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardDescription,
+  Badge,
+  Skeleton,
+  StatCard,
+} from "../components/ui";
+import { cn } from "../lib/utils";
+import {
+  Play,
+  BookOpen,
+  Clock,
+  Award,
+  Target,
+  TrendingUp,
+  FileText,
+  CheckCircle,
+  BarChart3,
+} from "lucide-react";
 
 const ExamList: React.FC = () => {
   const [papers, setPapers] = useState<QuestionPaper[]>([]);
@@ -33,162 +56,301 @@ const ExamList: React.FC = () => {
     }
   };
 
-  if (loading) return <p>Loading...</p>;
+  const getStatusVariant = (status: string) => {
+    switch (status) {
+      case "evaluated":
+      case "reviewed":
+        return "success" as const;
+      case "in_progress":
+        return "warning" as const;
+      case "submitted":
+        return "info" as const;
+      default:
+        return "secondary" as const;
+    }
+  };
+
+  const getScoreColor = (pct: number | undefined) => {
+    if (pct === undefined || pct === null) return "";
+    if (pct >= 70) return "text-green-600 dark:text-green-400";
+    if (pct >= 40) return "text-amber-600 dark:text-amber-400";
+    return "text-red-600 dark:text-red-400";
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-10 w-48" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-28" />
+          ))}
+        </div>
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
+
+  // Compute stats
+  const completedExams = myExams.filter(
+    (e) => e.status === "evaluated" || e.status === "reviewed",
+  );
+  const averageScore =
+    completedExams.length > 0
+      ? Math.round(
+          completedExams.reduce((sum, e) => sum + (e.percentage || 0), 0) /
+            completedExams.length,
+        )
+      : null;
+  const inProgressExams = myExams.filter((e) => e.status === "in_progress");
 
   return (
-    <div>
-      <h2>Available Exams</h2>
+    <div className="space-y-6">
+      {/* Page Header */}
+      <div>
+        <h2 className="text-2xl font-bold font-display tracking-tight">
+          Exams
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Take exams, practice, and track your progress
+        </p>
+      </div>
 
-      {/* Past Exams */}
+      {/* Stats */}
       {myExams.length > 0 && (
-        <div style={sectionStyle}>
-          <h3>My Exam History</h3>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Session ID</th>
-                <th style={thStyle}>Status</th>
-                <th style={thStyle}>Score</th>
-                <th style={thStyle}>Grade</th>
-                <th style={thStyle}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {myExams.map((exam) => (
-                <tr key={exam.id}>
-                  <td style={tdStyle}>#{exam.id}</td>
-                  <td style={tdStyle}>
-                    <span style={statusBadge(exam.status)}>{exam.status}</span>
-                  </td>
-                  <td style={tdStyle}>
-                    {exam.percentage != null ? `${exam.percentage}%` : "-"}
-                  </td>
-                  <td style={tdStyle}>{exam.grade || "-"}</td>
-                  <td style={tdStyle}>
-                    {exam.status === "in_progress" && (
-                      <Link to={`/exam/${exam.id}`} style={linkStyle}>
-                        Continue
-                      </Link>
-                    )}
-                    {exam.status === "evaluated" && (
-                      <Link to={`/results/${exam.id}`} style={linkStyle}>
-                        View Results
-                      </Link>
-                    )}
-                  </td>
-                </tr>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <StatCard
+            title="Total Exams"
+            value={myExams.length}
+            icon={<FileText className="h-5 w-5" />}
+          />
+          <StatCard
+            title="Completed"
+            value={completedExams.length}
+            icon={<CheckCircle className="h-5 w-5" />}
+          />
+          <StatCard
+            title="Average Score"
+            value={averageScore !== null ? `${averageScore}%` : "-"}
+            icon={<TrendingUp className="h-5 w-5" />}
+          />
+          <StatCard
+            title="In Progress"
+            value={inProgressExams.length}
+            icon={<Clock className="h-5 w-5" />}
+          />
+        </div>
+      )}
+
+      {/* In Progress Exams */}
+      {inProgressExams.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Clock className="h-4 w-4 text-amber-500" />
+            Continue Where You Left Off
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {inProgressExams.map((exam) => (
+              <Card
+                key={exam.id}
+                className="border-amber-200 dark:border-amber-800 bg-amber-50/30 dark:bg-amber-950/10"
+              >
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg bg-amber-100 dark:bg-amber-900/30 p-2">
+                      <Clock className="h-4 w-4 text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Exam #{exam.id}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {exam.is_practice && (
+                          <Badge
+                            variant="secondary"
+                            className="mr-1 text-[10px]"
+                          >
+                            Practice
+                          </Badge>
+                        )}
+                        {Math.round(exam.time_spent_seconds / 60)} min spent
+                      </p>
+                    </div>
+                  </div>
+                  <Link to={`/exam/${exam.id}`}>
+                    <Button size="sm">
+                      <Play className="h-3.5 w-3.5 mr-1" />
+                      Continue
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Exam History */}
+      {completedExams.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-primary" />
+            Exam History
+          </h3>
+          <div className="grid grid-cols-1 gap-2">
+            {myExams
+              .filter(
+                (e) =>
+                  e.status === "evaluated" ||
+                  e.status === "reviewed" ||
+                  e.status === "submitted",
+              )
+              .map((exam) => (
+                <Card key={exam.id} className="transition-all hover:shadow-sm">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">
+                            Exam #{exam.id}
+                          </span>
+                          <Badge
+                            variant={getStatusVariant(exam.status)}
+                            className="text-xs"
+                          >
+                            {exam.status.replace("_", " ")}
+                          </Badge>
+                          {exam.is_practice && (
+                            <Badge variant="outline" className="text-xs">
+                              Practice
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        {exam.percentage != null && (
+                          <span
+                            className={cn(
+                              "text-lg font-bold font-display",
+                              getScoreColor(exam.percentage),
+                            )}
+                          >
+                            {exam.percentage}%
+                          </span>
+                        )}
+                        {exam.grade && (
+                          <Badge variant="secondary" className="text-xs">
+                            {exam.grade}
+                          </Badge>
+                        )}
+                        {exam.status === "evaluated" ||
+                        exam.status === "reviewed" ? (
+                          <Link to={`/results/${exam.id}`}>
+                            <Button variant="outline" size="sm">
+                              <Award className="h-3.5 w-3.5 mr-1" />
+                              View Results
+                            </Button>
+                          </Link>
+                        ) : exam.status === "submitted" ? (
+                          <Link to={`/results/${exam.id}`}>
+                            <Button size="sm">
+                              <Target className="h-3.5 w-3.5 mr-1" />
+                              Evaluate
+                            </Button>
+                          </Link>
+                        ) : null}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
-            </tbody>
-          </table>
+          </div>
         </div>
       )}
 
       {/* Available Papers */}
-      <div style={sectionStyle}>
-        <h3>Available Question Papers</h3>
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold flex items-center gap-2">
+          <BookOpen className="h-4 w-4 text-primary" />
+          Available Question Papers
+        </h3>
         {papers.length === 0 ? (
-          <p style={{ color: "#95a5a6" }}>
-            No papers available. Ask your teacher to publish papers.
-          </p>
+          <Card>
+            <CardContent className="py-12 text-center">
+              <FileText className="h-12 w-12 mx-auto text-muted-foreground/40 mb-3" />
+              <p className="text-muted-foreground font-medium">
+                No papers available
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Ask your teacher to publish question papers
+              </p>
+            </CardContent>
+          </Card>
         ) : (
-          <div style={{ display: "grid", gap: 12 }}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {papers.map((paper) => (
-              <div key={paper.id} style={paperCardStyle}>
-                <div>
-                  <h4 style={{ margin: 0 }}>{paper.title}</h4>
-                  <p style={{ color: "#7f8c8d", margin: "4px 0", fontSize: 13 }}>
-                    {paper.board} | Class {paper.class_grade} | {paper.subject}{" "}
-                    | {paper.total_marks} marks | {paper.duration_minutes} min
-                  </p>
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    onClick={() => startExam(paper.id, true)}
-                    style={{ ...btnStyle, background: "#e67e22" }}
-                  >
-                    Practice
-                  </button>
-                  {paper.status === "active" && (
-                    <button
-                      onClick={() => startExam(paper.id, false)}
-                      style={btnStyle}
+              <Card key={paper.id} className="transition-all hover:shadow-md">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle className="text-base">{paper.title}</CardTitle>
+                      <CardDescription className="mt-1">
+                        {paper.board} | Class {paper.class_grade} |{" "}
+                        {paper.subject}
+                      </CardDescription>
+                    </div>
+                    <Badge
+                      variant={
+                        paper.status === "active" ? "success" : "secondary"
+                      }
+                      className="text-xs"
                     >
-                      Start Exam
-                    </button>
-                  )}
-                </div>
-              </div>
+                      {paper.status}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground mb-4">
+                    <span className="flex items-center gap-1">
+                      <Target className="h-3 w-3" />
+                      {paper.total_marks} marks
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {paper.duration_minutes} min
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <FileText className="h-3 w-3" />
+                      {paper.question_count} questions
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => startExam(paper.id, true)}
+                      className="flex-1"
+                    >
+                      <BookOpen className="h-3.5 w-3.5 mr-1" />
+                      Practice
+                    </Button>
+                    {paper.status === "active" && (
+                      <Button
+                        size="sm"
+                        onClick={() => startExam(paper.id, false)}
+                        className="flex-1"
+                      >
+                        <Play className="h-3.5 w-3.5 mr-1" />
+                        Start Exam
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         )}
       </div>
     </div>
   );
-};
-
-const statusBadge = (status: string): React.CSSProperties => ({
-  padding: "2px 8px",
-  borderRadius: 12,
-  fontSize: 12,
-  background:
-    status === "evaluated"
-      ? "#d5f5e3"
-      : status === "in_progress"
-      ? "#fef9e7"
-      : "#eee",
-  color:
-    status === "evaluated"
-      ? "#27ae60"
-      : status === "in_progress"
-      ? "#e67e22"
-      : "#666",
-});
-
-const sectionStyle: React.CSSProperties = {
-  background: "white",
-  borderRadius: 8,
-  padding: 20,
-  marginBottom: 16,
-  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-};
-const tableStyle: React.CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-};
-const thStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "8px 12px",
-  borderBottom: "2px solid #eee",
-  color: "#7f8c8d",
-  fontSize: 13,
-};
-const tdStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  borderBottom: "1px solid #f0f0f0",
-  fontSize: 14,
-};
-const paperCardStyle: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  padding: 16,
-  background: "#f8f9fa",
-  borderRadius: 8,
-  border: "1px solid #eee",
-};
-const btnStyle: React.CSSProperties = {
-  padding: "8px 16px",
-  background: "#3498db",
-  color: "white",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontSize: 13,
-};
-const linkStyle: React.CSSProperties = {
-  color: "#3498db",
-  textDecoration: "none",
-  fontSize: 13,
 };
 
 export default ExamList;
