@@ -13,6 +13,7 @@ from ...models.exam import QuestionPaper, PaperQuestion, Question, PaperStatus
 from ...schemas.exam import (
     QuestionPaperCreate, QuestionPaperResponse, QuestionPaperDetail,
     PaperQuestionAdd, PaperStatusUpdate,
+    PaperAssemblyRequest, PaperAssemblyResult,
 )
 from ..deps import get_current_user, require_teacher_or_admin
 
@@ -259,6 +260,32 @@ async def update_paper_status(
         starts_at=paper.starts_at,
         ends_at=paper.ends_at,
     )
+
+
+@router.post("/assemble", response_model=PaperAssemblyResult)
+async def assemble_paper_endpoint(
+    data: PaperAssemblyRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_teacher_or_admin),
+):
+    """AI-assisted paper assembly from bank questions + gap-filling generation."""
+    from ...services.paper_assembler import assemble_paper
+
+    result = await assemble_paper(
+        db=db,
+        board=data.board,
+        class_grade=data.class_grade,
+        subject=data.subject,
+        chapters=data.chapters,
+        total_marks=data.total_marks,
+        duration_minutes=data.duration_minutes,
+        sections=[s.model_dump() for s in data.sections],
+        question_type_distribution=data.question_type_distribution,
+        title=data.title,
+        exam_type=data.exam_type,
+    )
+
+    return PaperAssemblyResult(**result)
 
 
 @router.post("/{paper_id}/questions", status_code=201)
