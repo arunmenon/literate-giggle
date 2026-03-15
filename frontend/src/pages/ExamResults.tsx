@@ -9,6 +9,7 @@ const ExamResults: React.FC = () => {
   const [session, setSession] = useState<ExamSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [evaluating, setEvaluating] = useState(false);
+  const [evalMethod, setEvalMethod] = useState("rubric");
 
   useEffect(() => {
     if (!sessionId) return;
@@ -33,6 +34,7 @@ const ExamResults: React.FC = () => {
     try {
       const { data } = await evaluationAPI.evaluate({
         session_id: Number(sessionId),
+        method: evalMethod,
       });
       setEvaluation(data);
     } catch (err: any) {
@@ -48,7 +50,32 @@ const ExamResults: React.FC = () => {
     return (
       <div style={sectionStyle}>
         <h2>Exam Submitted</h2>
-        <p>Your exam has been submitted. Click below to evaluate.</p>
+        <p>Your exam has been submitted. Choose an evaluation method:</p>
+        <div style={{ display: "flex", gap: 12, margin: "16px 0", alignItems: "center" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 14 }}>
+            <input type="radio" name="method" value="rubric"
+              checked={evalMethod === "rubric"}
+              onChange={() => setEvalMethod("rubric")} />
+            Rubric-based (Fast)
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 14 }}>
+            <input type="radio" name="method" value="ai"
+              checked={evalMethod === "ai"}
+              onChange={() => setEvalMethod("ai")} />
+            AI-Powered (Claude)
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 14 }}>
+            <input type="radio" name="method" value="hybrid"
+              checked={evalMethod === "hybrid"}
+              onChange={() => setEvalMethod("hybrid")} />
+            Hybrid (AI + Rubric)
+          </label>
+        </div>
+        <p style={{ fontSize: 12, color: "#95a5a6", marginBottom: 12 }}>
+          {evalMethod === "rubric" && "Uses keyword matching and marking scheme. Always available."}
+          {evalMethod === "ai" && "Uses Claude AI for intelligent subjective answer evaluation. Requires API key."}
+          {evalMethod === "hybrid" && "AI for subjective questions, auto-grade for MCQs. Best accuracy."}
+        </p>
         <button
           onClick={triggerEvaluation}
           disabled={evaluating}

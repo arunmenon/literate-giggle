@@ -4,6 +4,9 @@ sqlalchemy[asyncio]==2.0.36
 aiosqlite==0.20.0
 pydantic[email]==2.10.1
 pydantic-settings==2.6.1
-passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 PyJWT==2.10.1
 python-multipart==0.0.12
+
+# Optional: AI-powered evaluation (uncomment to enable)
+# anthropic>=0.40.0

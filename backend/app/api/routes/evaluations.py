@@ -20,6 +20,7 @@ from ...schemas.evaluation import (
 from ...services.evaluation_engine import (
     evaluate_question, calculate_grade, generate_recommendations,
 )
+from ...services.ai_evaluator import evaluate_with_ai, generate_ai_recommendations
 from ...services.learning_plan_generator import update_topic_mastery
 from ..deps import get_current_user, require_teacher_or_admin
 
@@ -86,8 +87,19 @@ async def evaluate_session(
 
         marks_possible = pq.marks_override or question.marks
 
-        # Evaluate
-        eval_result = evaluate_question(question, answer)
+        # Evaluate - try AI first for "ai"/"hybrid" methods, fallback to rubric
+        eval_result = None
+        if data.method in ("ai", "hybrid"):
+            eval_result = await evaluate_with_ai(
+                question, answer,
+                board=paper.board, subject=paper.subject,
+                class_grade=paper.class_grade,
+            )
+
+        # Fallback to rule-based evaluation
+        if eval_result is None:
+            eval_result = evaluate_question(question, answer)
+
         # Scale marks if override
         if pq.marks_override and question.marks > 0:
             scale = pq.marks_override / question.marks
@@ -114,6 +126,7 @@ async def evaluate_session(
             marks_obtained=eval_result["marks_obtained"],
             marks_possible=marks_possible,
             feedback=eval_result.get("feedback"),
+            rubric_scores=eval_result.get("rubric_scores"),
             keywords_found=eval_result.get("keywords_found"),
             keywords_missing=eval_result.get("keywords_missing"),
             step_scores=eval_result.get("step_scores"),
@@ -147,9 +160,17 @@ async def evaluate_session(
     strengths = [t for t, p in topic_pcts.items() if p >= 70]
     weaknesses = [t for t, p in topic_pcts.items() if p < 50]
 
-    recommendations = generate_recommendations(
-        dict(topic_scores), blooms_pcts, difficulty_pcts
-    )
+    # Try AI recommendations first, fallback to rule-based
+    recommendations = None
+    if data.method in ("ai", "hybrid"):
+        recommendations = await generate_ai_recommendations(
+            dict(topic_scores), blooms_pcts, difficulty_pcts,
+            paper.subject, paper.board, paper.class_grade,
+        )
+    if recommendations is None:
+        recommendations = generate_recommendations(
+            dict(topic_scores), blooms_pcts, difficulty_pcts
+        )
 
     # Update evaluation
     evaluation.total_marks_obtained = round(total_obtained, 1)

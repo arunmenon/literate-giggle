@@ -24,47 +24,159 @@ CURRICULUM_RESOURCES = {
             {"type": "practice", "title": "Solve 20 practice problems daily"},
             {"type": "video", "title": "Khan Academy - Algebra fundamentals"},
         ],
+        "Polynomials": [
+            {"type": "concept", "title": "Review zeroes and factorization of polynomials"},
+            {"type": "practice", "title": "Practice finding zeroes and verifying relationships"},
+        ],
+        "Quadratic Equations": [
+            {"type": "concept", "title": "Master factorization, completing square, and quadratic formula"},
+            {"type": "practice", "title": "Solve discriminant-based and word problems"},
+        ],
+        "Arithmetic Progressions": [
+            {"type": "concept", "title": "Review nth term and sum formulas"},
+            {"type": "practice", "title": "Solve AP word problems from board papers"},
+        ],
+        "Linear Equations": [
+            {"type": "concept", "title": "Review graphical and algebraic methods"},
+            {"type": "practice", "title": "Practice consistency conditions and word problems"},
+        ],
+        "Coordinate Geometry": [
+            {"type": "concept", "title": "Review distance, section, and area formulas"},
+            {"type": "practice", "title": "Solve coordinate geometry numerical problems"},
+        ],
         "Geometry": [
             {"type": "concept", "title": "Review theorems and proofs"},
             {"type": "practice", "title": "Practice constructions and proofs"},
             {"type": "video", "title": "Geometry visualization exercises"},
+        ],
+        "Triangles": [
+            {"type": "concept", "title": "Review similarity and congruence theorems"},
+            {"type": "practice", "title": "Practice BPT and Pythagoras theorem problems"},
         ],
         "Trigonometry": [
             {"type": "concept", "title": "Memorize trigonometric ratios and identities"},
             {"type": "practice", "title": "Solve height and distance problems"},
         ],
         "Statistics": [
-            {"type": "concept", "title": "Review mean, median, mode concepts"},
-            {"type": "practice", "title": "Practice data interpretation questions"},
+            {"type": "concept", "title": "Review mean, median, mode for grouped data"},
+            {"type": "practice", "title": "Practice data interpretation and ogive problems"},
+        ],
+        "Real Numbers": [
+            {"type": "concept", "title": "Review Euclid's division and fundamental theorem of arithmetic"},
+            {"type": "practice", "title": "Practice HCF, LCM, and irrationality proofs"},
+        ],
+        "Surface Areas and Volumes": [
+            {"type": "concept", "title": "Review formulas for combined solids"},
+            {"type": "practice", "title": "Solve conversion of solids problems"},
+        ],
+        "Sets": [
+            {"type": "concept", "title": "Review set operations - union, intersection, complement"},
+            {"type": "practice", "title": "Practice Venn diagram problems"},
+        ],
+        "Matrices": [
+            {"type": "concept", "title": "Review matrix operations and determinants"},
+            {"type": "practice", "title": "Solve simultaneous equations using matrices"},
+        ],
+        "Mensuration": [
+            {"type": "concept", "title": "Review area and volume formulas for 3D shapes"},
+            {"type": "practice", "title": "Practice combined solids problems"},
+        ],
+        "Number Systems": [
+            {"type": "concept", "title": "Review rational and irrational numbers"},
+            {"type": "practice", "title": "Practice representation on number line"},
+        ],
+        "Heron's Formula": [
+            {"type": "concept", "title": "Review Heron's formula and applications"},
+            {"type": "practice", "title": "Solve area problems for irregular shapes"},
         ],
     },
     "Science": {
+        "Electricity": [
+            {"type": "concept", "title": "Review Ohm's law, resistance, and circuits"},
+            {"type": "practice", "title": "Solve circuit and power numerical problems"},
+            {"type": "experiment", "title": "Review Ohm's law verification experiment"},
+        ],
+        "Light - Reflection and Refraction": [
+            {"type": "concept", "title": "Review mirror and lens formulas, sign convention"},
+            {"type": "practice", "title": "Practice ray diagram and numerical problems"},
+        ],
+        "Chemical Reactions and Equations": [
+            {"type": "concept", "title": "Review types of reactions and balancing"},
+            {"type": "practice", "title": "Practice balancing equations and identifying reaction types"},
+        ],
+        "Acids, Bases and Salts": [
+            {"type": "concept", "title": "Review pH scale, indicators, and reactions"},
+            {"type": "practice", "title": "Practice salt preparation and property questions"},
+        ],
+        "Life Processes": [
+            {"type": "concept", "title": "Review nutrition, respiration, transportation, excretion"},
+            {"type": "practice", "title": "Practice diagram-based questions"},
+            {"type": "experiment", "title": "Review photosynthesis and respiration experiments"},
+        ],
         "Physics": [
             {"type": "concept", "title": "Review formulas and laws"},
             {"type": "practice", "title": "Solve numerical problems"},
             {"type": "experiment", "title": "Review lab experiments"},
         ],
         "Chemistry": [
-            {"type": "concept", "title": "Review reactions and equations"},
-            {"type": "practice", "title": "Practice balancing equations"},
+            {"type": "concept", "title": "Review reactions, equations, and periodic table"},
+            {"type": "practice", "title": "Practice balancing equations and reactions"},
         ],
         "Biology": [
             {"type": "concept", "title": "Review diagrams and processes"},
             {"type": "practice", "title": "Practice labeling diagrams"},
         ],
+        "Microorganisms": [
+            {"type": "concept", "title": "Review types of microorganisms and their uses"},
+            {"type": "practice", "title": "Practice questions on fermentation and diseases"},
+        ],
+        "Force and Pressure": [
+            {"type": "concept", "title": "Review types of forces and pressure concepts"},
+            {"type": "practice", "title": "Solve pressure calculation problems"},
+        ],
+        "Synthetic Fibres and Plastics": [
+            {"type": "concept", "title": "Review types and properties of synthetic fibres"},
+            {"type": "practice", "title": "Compare natural and synthetic materials"},
+        ],
+        "Combustion and Flame": [
+            {"type": "concept", "title": "Review conditions for combustion and types of flames"},
+            {"type": "practice", "title": "Practice fire safety and fuel efficiency questions"},
+        ],
     },
     "English": {
         "Grammar": [
-            {"type": "concept", "title": "Review grammar rules"},
-            {"type": "practice", "title": "Daily grammar exercises"},
+            {"type": "concept", "title": "Review grammar rules - tenses, voice, speech"},
+            {"type": "practice", "title": "Daily grammar exercises and transformations"},
         ],
         "Writing": [
-            {"type": "concept", "title": "Study essay structures"},
-            {"type": "practice", "title": "Write one essay daily"},
+            {"type": "concept", "title": "Study letter, essay, and story writing formats"},
+            {"type": "practice", "title": "Write one composition daily"},
         ],
         "Literature": [
-            {"type": "concept", "title": "Review character analysis techniques"},
-            {"type": "practice", "title": "Practice comprehension passages"},
+            {"type": "concept", "title": "Review character analysis and literary devices"},
+            {"type": "practice", "title": "Practice comprehension and extract-based questions"},
+        ],
+        "Reading Comprehension": [
+            {"type": "concept", "title": "Review strategies for unseen passages"},
+            {"type": "practice", "title": "Practice 2 passages daily with timed attempts"},
+        ],
+    },
+    "Social Studies": {
+        "History": [
+            {"type": "concept", "title": "Review key events, dates, and personalities"},
+            {"type": "practice", "title": "Practice source-based and analytical questions"},
+        ],
+        "Geography": [
+            {"type": "concept", "title": "Review maps, resources, and climate concepts"},
+            {"type": "practice", "title": "Practice map-based and data questions"},
+        ],
+        "Civics": [
+            {"type": "concept", "title": "Review constitutional provisions and governance"},
+            {"type": "practice", "title": "Practice case-study and analytical questions"},
+        ],
+        "Economics": [
+            {"type": "concept", "title": "Review sectors, development indicators, and GDP"},
+            {"type": "practice", "title": "Practice data interpretation and comparison questions"},
         ],
     },
 }
