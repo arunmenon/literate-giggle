@@ -7,6 +7,9 @@ dist/
 .env
 venv/
 
+# Uploads
+backend/uploads/
+
 # Node
 node_modules/
 frontend/dist/
@@ -19,3 +22,12 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# ClaudeFast runtime artifacts
+.claude/backups/
+.claude/hooks/*/logs/
+.claude/hooks/SkillActivationHook/recommendation-log.json
+.claude/skills/dev-browser/profiles
+.claude/skills/dev-browser/src
+.claude/skills/dev-browser/tmp
+.claude/tasks/
