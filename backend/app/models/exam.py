@@ -70,10 +70,11 @@ class QuestionBank(Base):
     subject = Column(String(100), nullable=False, index=True)
     chapter = Column(String(255))
     description = Column(Text)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    questions = relationship("Question", back_populates="bank")
+    questions = relationship("Question", back_populates="bank", cascade="all, delete-orphan")
 
 
 class Question(Base):
@@ -128,6 +129,7 @@ class QuestionPaper(Base):
     duration_minutes = Column(Integer, nullable=False)
     instructions = Column(Text)
     status = Column(Enum(PaperStatus), default=PaperStatus.DRAFT)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=True)
     # Paper structure
     sections = Column(JSON)  # [{"name": "Section A", "instructions": "...", "marks": 20}]
     # Lifecycle
@@ -143,7 +145,8 @@ class QuestionPaper(Base):
     )
 
     paper_questions = relationship(
-        "PaperQuestion", back_populates="paper", order_by="PaperQuestion.order"
+        "PaperQuestion", back_populates="paper", order_by="PaperQuestion.order",
+        cascade="all, delete-orphan",
     )
     exam_sessions = relationship("ExamSession", back_populates="paper")
 
@@ -193,7 +196,7 @@ class ExamSession(Base):
 
     paper = relationship("QuestionPaper", back_populates="exam_sessions")
     student = relationship("StudentProfile", back_populates="exam_sessions")
-    answers = relationship("StudentAnswer", back_populates="session")
+    answers = relationship("StudentAnswer", back_populates="session", cascade="all, delete-orphan")
     evaluation = relationship("Evaluation", back_populates="session", uselist=False)
 
 

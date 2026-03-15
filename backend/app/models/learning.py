@@ -4,6 +4,7 @@ import enum
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, Integer, String, DateTime, Enum, ForeignKey, Text, Float, JSON, Boolean,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -56,7 +57,7 @@ class LearningPlan(Base):
     )
 
     student = relationship("StudentProfile", back_populates="learning_plans")
-    objectives = relationship("LearningObjective", back_populates="plan")
+    objectives = relationship("LearningObjective", back_populates="plan", cascade="all, delete-orphan")
 
 
 class LearningObjective(Base):
@@ -90,6 +91,7 @@ class TopicMastery(Base):
     """Tracks student mastery across topics over time."""
 
     __tablename__ = "topic_masteries"
+    __table_args__ = (UniqueConstraint("student_id", "subject", "topic", name="uq_topic_mastery"),)
 
     id = Column(Integer, primary_key=True, index=True)
     student_id = Column(Integer, ForeignKey("student_profiles.id"), nullable=False)

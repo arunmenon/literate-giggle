@@ -15,6 +15,9 @@ import {
   Menu,
   X,
   Brain,
+  Users,
+  Copy,
+  Check,
 } from "lucide-react";
 
 interface NavItem {
@@ -23,46 +26,76 @@ interface NavItem {
   icon: React.ReactNode;
 }
 
-const studentNavItems: NavItem[] = [
-  {
-    label: "Dashboard",
-    path: "/",
-    icon: <LayoutDashboard className="h-5 w-5" />,
-  },
-  {
-    label: "My Exams",
-    path: "/exams",
-    icon: <ClipboardList className="h-5 w-5" />,
-  },
-  {
-    label: "Learning Plans",
-    path: "/learning",
-    icon: <Brain className="h-5 w-5" />,
-  },
-];
+function useNavItems(
+  role: string | null,
+  workspaceId: number | null,
+): NavItem[] {
+  if (!workspaceId) return [];
 
-const teacherNavItems: NavItem[] = [
-  {
-    label: "Dashboard",
-    path: "/",
-    icon: <LayoutDashboard className="h-5 w-5" />,
-  },
-  {
-    label: "Question Bank",
-    path: "/questions",
-    icon: <BookOpen className="h-5 w-5" />,
-  },
-  { label: "Papers", path: "/papers", icon: <FileText className="h-5 w-5" /> },
-];
+  if (role === "student") {
+    return [
+      {
+        label: "Dashboard",
+        path: "/",
+        icon: <LayoutDashboard className="h-5 w-5" />,
+      },
+      {
+        label: "My Exams",
+        path: "/exams",
+        icon: <ClipboardList className="h-5 w-5" />,
+      },
+      {
+        label: "Learning Plans",
+        path: "/learning",
+        icon: <Brain className="h-5 w-5" />,
+      },
+    ];
+  }
+
+  // Teacher or admin
+  return [
+    {
+      label: "Dashboard",
+      path: "/",
+      icon: <LayoutDashboard className="h-5 w-5" />,
+    },
+    {
+      label: "My Questions",
+      path: "/questions",
+      icon: <BookOpen className="h-5 w-5" />,
+    },
+    {
+      label: "My Papers",
+      path: "/papers",
+      icon: <FileText className="h-5 w-5" />,
+    },
+    {
+      label: "My Classes",
+      path: "/classes",
+      icon: <Users className="h-5 w-5" />,
+    },
+  ];
+}
 
 const Layout: React.FC = () => {
-  const { isAuthenticated, fullName, role, logout } = useAuth();
+  const {
+    isAuthenticated,
+    fullName,
+    role,
+    logout,
+    workspaceId,
+    workspaceName,
+    workspaceRole,
+  } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isDark, setIsDark] = useState(() => {
     return localStorage.getItem("theme") === "dark";
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+
+  const navItems = useNavItems(role, workspaceId);
 
   useEffect(() => {
     if (isDark) {
@@ -87,8 +120,6 @@ const Layout: React.FC = () => {
     );
   }
 
-  const navItems = role === "student" ? studentNavItems : teacherNavItems;
-
   return (
     <div className="min-h-screen bg-background flex">
       {/* Mobile overlay */}
@@ -106,15 +137,15 @@ const Layout: React.FC = () => {
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        {/* Logo */}
+        {/* Logo + workspace name */}
         <div className="flex h-16 items-center justify-between px-6 border-b border-white/10">
           <Link
             to="/"
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 min-w-0"
             onClick={() => setSidebarOpen(false)}
           >
-            <GraduationCap className="h-7 w-7 text-primary" />
-            <span className="text-xl font-bold font-display tracking-tight">
+            <GraduationCap className="h-7 w-7 shrink-0 text-primary" />
+            <span className="text-xl font-bold font-display tracking-tight truncate">
               ExamIQ
             </span>
           </Link>
@@ -126,6 +157,23 @@ const Layout: React.FC = () => {
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {/* Workspace indicator */}
+        {workspaceName && (
+          <div className="px-4 py-3 border-b border-white/10">
+            <p className="text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider">
+              Workspace
+            </p>
+            <p className="mt-0.5 text-sm font-medium truncate">
+              {workspaceName}
+            </p>
+            {workspaceRole && (
+              <p className="text-xs text-sidebar-foreground/50 capitalize">
+                {workspaceRole}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1">
@@ -148,6 +196,23 @@ const Layout: React.FC = () => {
               </Link>
             );
           })}
+
+          {/* Student without enrollment - join classroom CTA */}
+          {role === "student" && !workspaceId && (
+            <div className="mt-4 rounded-lg border border-white/10 p-3">
+              <p className="text-xs text-sidebar-foreground/60 mb-2">
+                Join a classroom to see your exams
+              </p>
+              <Link
+                to="/workspace-setup"
+                className="flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Users className="h-4 w-4" />
+                Join Classroom
+              </Link>
+            </div>
+          )}
         </nav>
 
         {/* User section */}

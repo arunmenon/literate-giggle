@@ -293,7 +293,14 @@ const QuestionBankPage: React.FC = () => {
 
   const loadQuestions = (bankId: number) => {
     setSelectedBank(bankId);
-    questionAPI.list({ bank_id: bankId }).then((res) => setQuestions(res.data));
+    setShowGenPanel(false);
+    questionAPI.list({ bank_id: bankId }).then((res) => {
+      setQuestions(res.data);
+      // Auto-open AI generation panel for empty banks
+      if (res.data.length === 0) {
+        openGenPanel();
+      }
+    });
   };
 
   const createBank = async (e: React.FormEvent) => {
@@ -668,7 +675,8 @@ const QuestionBankPage: React.FC = () => {
             Question Bank
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Manage question banks and create questions manually or with AI
+            Create question banks and let AI generate curriculum-aligned
+            questions
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -805,17 +813,17 @@ const QuestionBankPage: React.FC = () => {
                 in this bank
               </p>
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
                 onClick={() => setShowQForm(!showQForm)}
               >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Manual
-              </Button>
-              <Button onClick={openGenPanel}>
-                <Sparkles className="h-4 w-4 mr-2" />
-                Generate with AI
+                or add manually
+              </button>
+              <Button onClick={openGenPanel} className="gap-2">
+                <Sparkles className="h-4 w-4" />
+                Generate Questions
               </Button>
             </div>
           </div>

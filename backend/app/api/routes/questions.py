@@ -1,7 +1,7 @@
 """Question Bank and Question CRUD routes (Curation)."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import Optional
@@ -23,7 +23,7 @@ from ...schemas.exam import (
 )
 from ...services.question_generator import generate_questions, generate_bulk_questions
 from ...services.curriculum_registry import CurriculumRegistry
-from ..deps import get_current_user, require_teacher_or_admin
+from ..deps import get_current_user, require_teacher_or_admin, get_current_workspace
 
 router = APIRouter(prefix="/questions", tags=["Question Bank (Curation)"])
 _registry = CurriculumRegistry()
@@ -40,8 +40,12 @@ async def create_question_bank(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_teacher_or_admin),
 ):
-    """Create a new question bank."""
-    bank = QuestionBank(**data.model_dump(), created_by=user.id)
+    """Create a new question bank. Auto-sets workspace_id from JWT."""
+    bank = QuestionBank(
+        **data.model_dump(),
+        created_by=user.id,
+        workspace_id=get_current_workspace(user),
+    )
     db.add(bank)
     await db.flush()
     return QuestionBankResponse(
@@ -64,8 +68,24 @@ async def list_question_banks(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """List question banks with optional filters."""
+    """List question banks with optional filters, scoped to workspace."""
+    ws_id = get_current_workspace(user)
     query = select(QuestionBank)
+
+    # Workspace scoping: show banks from current workspace OR legacy (null) owned by user
+    if ws_id:
+        query = query.where(
+            or_(
+                QuestionBank.workspace_id == ws_id,
+                and_(
+                    QuestionBank.workspace_id.is_(None),
+                    QuestionBank.created_by == user.id,
+                ),
+            )
+        )
+    else:
+        query = query.where(QuestionBank.created_by == user.id)
+
     if board:
         query = query.where(QuestionBank.board == board)
     if class_grade:
@@ -186,10 +206,22 @@ async def get_question(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Get a question by ID."""
+    """Get a question by ID (workspace-scoped)."""
     question = await db.get(Question, question_id)
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
+
+    # IDOR check: question's bank must be in current workspace or legacy (null + created_by == user)
+    bank = await db.get(QuestionBank, question.bank_id)
+    ws_id = get_current_workspace(user)
+    if bank:
+        if bank.workspace_id is not None:
+            if ws_id != bank.workspace_id:
+                raise HTTPException(status_code=403, detail="Access denied")
+        else:
+            if bank.created_by != user.id:
+                raise HTTPException(status_code=403, detail="Access denied")
+
     return question
 
 
@@ -200,13 +232,30 @@ async def update_question(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_teacher_or_admin),
 ):
-    """Update a question."""
+    """Update a question (workspace-scoped)."""
     question = await db.get(Question, question_id)
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
 
+    # IDOR check: question's bank must be in current workspace or legacy (null + created_by == user)
+    bank = await db.get(QuestionBank, question.bank_id)
+    ws_id = get_current_workspace(user)
+    if bank:
+        if bank.workspace_id is not None:
+            if ws_id != bank.workspace_id:
+                raise HTTPException(status_code=403, detail="Access denied")
+        else:
+            if bank.created_by != user.id:
+                raise HTTPException(status_code=403, detail="Access denied")
+
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(question, key, value)
+
+    # Lazy migrate: set workspace_id on the parent bank if null
+    if bank and bank.workspace_id is None:
+        ws_id = get_current_workspace(user)
+        if ws_id:
+            bank.workspace_id = ws_id
 
     await db.flush()
     return question
@@ -362,9 +411,21 @@ async def delete_question(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_teacher_or_admin),
 ):
-    """Soft-delete a question."""
+    """Soft-delete a question (workspace-scoped)."""
     question = await db.get(Question, question_id)
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
+
+    # IDOR check: question's bank must be in current workspace or legacy (null + created_by == user)
+    bank = await db.get(QuestionBank, question.bank_id)
+    ws_id = get_current_workspace(user)
+    if bank:
+        if bank.workspace_id is not None:
+            if ws_id != bank.workspace_id:
+                raise HTTPException(status_code=403, detail="Access denied")
+        else:
+            if bank.created_by != user.id:
+                raise HTTPException(status_code=403, detail="Access denied")
+
     question.is_active = False
     await db.flush()

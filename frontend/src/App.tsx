@@ -12,12 +12,25 @@ import ExamResults from "./pages/ExamResults";
 import QuestionBankPage from "./pages/QuestionBankPage";
 import PapersPage from "./pages/PapersPage";
 import LearningPlansPage from "./pages/LearningPlansPage";
+import WorkspaceSetup from "./pages/WorkspaceSetup";
+import ClassManagement from "./pages/ClassManagement";
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
+  const { isAuthenticated, needsWorkspaceSetup } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  // Redirect to workspace setup if authenticated but no workspace
+  if (needsWorkspaceSetup) return <Navigate to="/workspace-setup" replace />;
+  return <>{children}</>;
+};
+
+const WorkspaceRoute: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const { isAuthenticated } = useAuth();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  // Accessible even without workspace (that's the point of this page)
   return <>{children}</>;
 };
 
@@ -35,6 +48,14 @@ const App: React.FC = () => {
           <Route element={<Layout />}>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route
+              path="/workspace-setup"
+              element={
+                <WorkspaceRoute>
+                  <WorkspaceSetup />
+                </WorkspaceRoute>
+              }
+            />
             <Route
               path="/"
               element={
@@ -88,6 +109,14 @@ const App: React.FC = () => {
               element={
                 <ProtectedRoute>
                   <LearningPlansPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/classes"
+              element={
+                <ProtectedRoute>
+                  <ClassManagement />
                 </ProtectedRoute>
               }
             />

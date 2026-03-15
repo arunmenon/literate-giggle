@@ -41,3 +41,10 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+DANGEROUS_SECRET_DEFAULTS = {
+    "change-me-in-production-use-openssl-rand-hex-32",
+    "secret",
+    "test",
+    "test-secret-key-for-development",
+}

@@ -24,6 +24,67 @@ export interface TokenResponse {
   user_id: number;
   role: string;
   full_name: string;
+  workspace_id?: number | null;
+  workspace_role?: string | null;
+  workspace_name?: string | null;
+  workspace_type?: string | null;
+}
+
+// ── Workspace & Tenancy ──
+
+export interface Workspace {
+  id: number;
+  name: string;
+  type: "personal" | "school";
+  invite_code: string;
+  owner_id: number;
+  created_at: string;
+}
+
+export interface WorkspaceMember {
+  id: number;
+  workspace_id: number;
+  user_id: number;
+  role: "owner" | "admin" | "teacher" | "student";
+  full_name?: string;
+  email?: string;
+  joined_at: string;
+}
+
+export interface ClassGroup {
+  id: number;
+  workspace_id: number;
+  name: string;
+  grade: number;
+  section?: string;
+  subject?: string;
+  academic_year: string;
+  teacher_id?: number;
+  student_count?: number;
+  created_at: string;
+}
+
+export interface Enrollment {
+  id: number;
+  class_id: number;
+  student_id: number;
+  student_name?: string;
+  enrolled_at: string;
+  is_active: boolean;
+}
+
+export interface ExamAssignment {
+  id: number;
+  paper_id: number;
+  class_id: number;
+  status: "draft" | "active" | "closed";
+  label?: string;
+  start_at?: string;
+  end_at?: string;
+  is_practice: boolean;
+  paper_title?: string;
+  class_name?: string;
+  created_at: string;
 }
 
 // ── Question Bank ──

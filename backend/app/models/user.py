@@ -31,9 +31,12 @@ class User(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+    # Tracks which workspace the user is currently operating in (NOT membership FK)
+    active_workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=True)
 
     student_profile = relationship("StudentProfile", back_populates="user", uselist=False)
     teacher_profile = relationship("TeacherProfile", back_populates="user", uselist=False)
+    active_workspace = relationship("Workspace", foreign_keys=[active_workspace_id])
 
 
 class StudentProfile(Base):

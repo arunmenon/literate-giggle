@@ -21,6 +21,13 @@ from .curriculum import (
     QuestionPattern,
     UploadedDocument,
 )
+from .workspace import (
+    Workspace,
+    WorkspaceMember,
+    ClassGroup,
+    Enrollment,
+    ExamAssignment,
+)
 
 __all__ = [
     "User",
@@ -46,4 +53,9 @@ __all__ = [
     "LearningOutcome",
     "QuestionPattern",
     "UploadedDocument",
+    "Workspace",
+    "WorkspaceMember",
+    "ClassGroup",
+    "Enrollment",
+    "ExamAssignment",
 ]

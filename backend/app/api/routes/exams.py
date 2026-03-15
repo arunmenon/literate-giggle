@@ -1,22 +1,23 @@
-"""Exam session routes (Simulation)."""
+"""Exam session routes (Simulation) with workspace scoping."""
 
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ...core.database import get_db
-from ...models.user import User, StudentProfile
+from ...models.user import User, UserRole, StudentProfile
 from ...models.exam import (
     QuestionPaper, PaperQuestion, ExamSession, StudentAnswer,
     PaperStatus, ExamSessionStatus,
 )
+from ...models.workspace import ExamAssignment, Enrollment, ClassGroup
 from ...schemas.exam import (
     StartExamRequest, SubmitAnswerRequest, AutoSaveRequest,
     ExamSessionResponse, ExamSessionDetail,
 )
-from ..deps import get_current_user, get_current_student
+from ..deps import get_current_user, get_current_student, get_current_workspace
 
 router = APIRouter(prefix="/exams", tags=["Exam Sessions (Simulation)"])
 
@@ -27,7 +28,7 @@ async def start_exam(
     db: AsyncSession = Depends(get_db),
     student: StudentProfile = Depends(get_current_student),
 ):
-    """Start a new exam session for the student."""
+    """Start a new exam session for the student. Validates paper is assigned to student's class."""
     paper = await db.get(QuestionPaper, data.paper_id)
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -39,6 +40,29 @@ async def start_exam(
         PaperStatus.PUBLISHED, PaperStatus.ACTIVE
     ):
         raise HTTPException(status_code=400, detail="Paper is not available for practice")
+
+    # Validate paper is assigned to a class the student is enrolled in
+    now = datetime.now(timezone.utc)
+    assignment_query = (
+        select(ExamAssignment)
+        .join(Enrollment, ExamAssignment.class_id == Enrollment.class_id)
+        .where(
+            ExamAssignment.paper_id == data.paper_id,
+            Enrollment.student_id == student.id,
+            Enrollment.is_active == True,
+            ExamAssignment.status == "active",
+        )
+    )
+    assignment_result = await db.execute(assignment_query)
+    assignment = assignment_result.scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=403, detail="This exam is not assigned to your class")
+
+    # Check schedule constraints
+    if assignment.start_at and now < assignment.start_at:
+        raise HTTPException(status_code=400, detail="This exam has not started yet")
+    if assignment.end_at and now > assignment.end_at:
+        raise HTTPException(status_code=400, detail="This exam window has closed")
 
     # Check for existing active session
     result = await db.execute(
@@ -134,7 +158,12 @@ async def flag_question(
     db: AsyncSession = Depends(get_db),
     student: StudentProfile = Depends(get_current_student),
 ):
-    """Flag/unflag a question for review."""
+    """Flag/unflag a question for review (ownership-checked)."""
+    # IDOR check: verify session belongs to current student
+    session = await db.get(ExamSession, session_id)
+    if not session or session.student_id != student.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+
     result = await db.execute(
         select(StudentAnswer).where(
             StudentAnswer.session_id == session_id,
@@ -161,7 +190,7 @@ async def get_exam_session(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Get exam session details with answers."""
+    """Get exam session details with answers (ownership-checked)."""
     result = await db.execute(
         select(ExamSession)
         .options(
@@ -173,6 +202,26 @@ async def get_exam_session(
     session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    # IDOR check: verify ownership
+    student_result = await db.execute(
+        select(StudentProfile).where(
+            StudentProfile.user_id == user.id,
+            StudentProfile.id == session.student_id,
+        )
+    )
+    is_owner = student_result.scalar_one_or_none() is not None
+
+    is_teacher_in_workspace = False
+    if not is_owner and user.role in (UserRole.TEACHER, UserRole.ADMIN):
+        paper = session.paper
+        if paper and paper.workspace_id:
+            ws_id = get_current_workspace(user)
+            if ws_id and ws_id == paper.workspace_id:
+                is_teacher_in_workspace = True
+
+    if not is_owner and not is_teacher_in_workspace:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     answers_data = [
         {

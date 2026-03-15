@@ -125,7 +125,7 @@ async def get_hint_endpoint(
     if hint_result is None:
         raise HTTPException(
             status_code=503,
-            detail="AI service unavailable. Please set ANTHROPIC_API_KEY.",
+            detail="AI service unavailable. Please set OPENAI_API_KEY.",
         )
 
     # Update the student answer record
@@ -190,7 +190,7 @@ async def explain_evaluation_endpoint(
     if explanation is None:
         raise HTTPException(
             status_code=503,
-            detail="AI service unavailable. Please set ANTHROPIC_API_KEY.",
+            detail="AI service unavailable. Please set OPENAI_API_KEY.",
         )
 
     return ExplainResponseSchema(

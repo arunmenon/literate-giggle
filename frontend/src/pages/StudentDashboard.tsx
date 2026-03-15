@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { dashboardAPI, learningAPI } from "../services/api";
+import { useAuth } from "../store/AuthContext";
 import type {
   StudentDashboard as DashboardData,
   TopicMastery,
@@ -19,6 +20,7 @@ import {
   DataCard,
   Progress,
   Skeleton,
+  Button,
 } from "../components/ui";
 import { ProgressChart } from "../components/charts/ProgressChart";
 import { MasteryHeatmap } from "../components/charts/MasteryHeatmap";
@@ -38,6 +40,10 @@ import {
   ChevronRight,
   Play,
   Sparkles,
+  Users,
+  AlertCircle,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -47,25 +53,12 @@ import {
 function DashboardSkeleton() {
   return (
     <div className="space-y-6">
-      {/* Hero skeleton */}
-      <div className="rounded-lg border bg-card p-6">
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-16 w-16 rounded-full" />
-          <div className="space-y-2">
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="h-4 w-64" />
-          </div>
-        </div>
-      </div>
-
-      {/* Stat cards skeleton */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, idx) => (
-          <Skeleton key={idx} className="h-28 rounded-lg" />
+      <Skeleton className="h-28 rounded-lg" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-28 rounded-lg" />
         ))}
       </div>
-
-      {/* Charts skeleton */}
       <div className="grid gap-6 md:grid-cols-2">
         <Skeleton className="h-72 rounded-lg" />
         <Skeleton className="h-72 rounded-lg" />
@@ -75,14 +68,35 @@ function DashboardSkeleton() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Countdown helper                                                    */
+/* ------------------------------------------------------------------ */
+
+function formatCountdown(dateStr: string): string {
+  const diff = new Date(dateStr).getTime() - Date.now();
+  if (diff <= 0) return "Now";
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(hours / 24);
+  if (days > 0) return `${days}d ${hours % 24}h`;
+  if (hours > 0) return `${hours}h`;
+  const minutes = Math.floor(diff / 60000);
+  return `${minutes}m`;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main component                                                      */
 /* ------------------------------------------------------------------ */
 
 const StudentDashboard: React.FC = () => {
+  const { workspaceId } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [mastery, setMastery] = useState<TopicMastery[]>([]);
   const [plans, setPlans] = useState<LearningPlan[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Extended dashboard data from backend (task #4)
+  const [upcomingExams, setUpcomingExams] = useState<any[]>([]);
+  const [recommendedAction, setRecommendedAction] = useState<string>("");
+  const [weeklyProgress, setWeeklyProgress] = useState<number | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -90,7 +104,14 @@ const StudentDashboard: React.FC = () => {
       learningAPI.getMastery().catch(() => ({ data: [] })),
       learningAPI.listPlans().catch(() => ({ data: [] })),
     ]).then(([dashRes, masteryRes, plansRes]) => {
-      setData(dashRes.data);
+      const dashData = dashRes.data;
+      setData(dashData);
+      // Extract new action-oriented fields from backend
+      if (dashData) {
+        setUpcomingExams(dashData.upcoming_exams || []);
+        setRecommendedAction(dashData.recommended_action || "");
+        setWeeklyProgress(dashData.weekly_progress ?? null);
+      }
       setMastery(masteryRes.data || []);
       setPlans(plansRes.data || []);
       setLoading(false);
@@ -98,6 +119,35 @@ const StudentDashboard: React.FC = () => {
   }, []);
 
   if (loading) return <DashboardSkeleton />;
+
+  // No workspace = show join CTA
+  if (!workspaceId) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+              <Users className="h-7 w-7 text-primary" />
+            </div>
+            <CardTitle>Join a Classroom</CardTitle>
+            <CardDescription>
+              Connect with your teacher to access exams, track progress, and get
+              personalized study plans.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link to="/workspace-setup">
+              <Button className="gap-2">
+                <Users className="h-4 w-4" />
+                Get Started
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (!data) {
     return (
       <Card className="p-8 text-center">
@@ -110,22 +160,27 @@ const StudentDashboard: React.FC = () => {
 
   /* ---- Derived data ---- */
 
-  const scoreChartData = data.recent_scores.map((scoreEntry) => ({
-    label:
-      scoreEntry.exam.length > 12
-        ? scoreEntry.exam.slice(0, 12) + "..."
-        : scoreEntry.exam,
-    score: scoreEntry.score,
-    date: scoreEntry.date,
+  const readinessScore =
+    mastery.length > 0
+      ? Math.round(
+          mastery.reduce((sum, t) => sum + t.avg_score_pct, 0) / mastery.length,
+        )
+      : data.average_score
+        ? Math.round(data.average_score)
+        : null;
+
+  const scoreChartData = data.recent_scores.map((s) => ({
+    label: s.exam.length > 12 ? s.exam.slice(0, 12) + "..." : s.exam,
+    score: s.score,
+    date: s.date,
   }));
 
-  const masteryHeatmapData = mastery.map((topicMastery) => ({
-    topic: topicMastery.topic,
-    masteryLevel: topicMastery.mastery_level,
-    score: topicMastery.avg_score_pct,
+  const masteryHeatmapData = mastery.map((t) => ({
+    topic: t.topic,
+    masteryLevel: t.mastery_level,
+    score: t.avg_score_pct,
   }));
 
-  // Build a simple Bloom's radar from mastery data (aggregate approach)
   const bloomsLevels = [
     "Remember",
     "Understand",
@@ -134,110 +189,237 @@ const StudentDashboard: React.FC = () => {
     "Evaluate",
     "Create",
   ];
-  const bloomsData = bloomsLevels.map((level, levelIndex) => ({
+  const bloomsData = bloomsLevels.map((level, i) => ({
     level,
     score: data.average_score
-      ? Math.max(
-          10,
-          Math.round((data.average_score ?? 0) * (1 - levelIndex * 0.1)),
-        )
+      ? Math.max(10, Math.round((data.average_score ?? 0) * (1 - i * 0.1)))
       : 0,
     fullMark: 100,
   }));
 
   const weakestTopic =
     mastery.length > 0
-      ? mastery.reduce((weakest, current) =>
-          current.avg_score_pct < weakest.avg_score_pct ? current : weakest,
-        )
+      ? mastery.reduce((w, c) => (c.avg_score_pct < w.avg_score_pct ? c : w))
       : null;
 
-  const activePlans = plans.filter((plan) => plan.is_active);
-
-  const scoreTrend =
-    data.recent_scores.length >= 2
-      ? {
-          value: Math.round(
-            data.recent_scores[data.recent_scores.length - 1].score -
-              data.recent_scores[data.recent_scores.length - 2].score,
-          ),
-          direction: (data.recent_scores[data.recent_scores.length - 1].score >=
-          data.recent_scores[data.recent_scores.length - 2].score
-            ? "up"
-            : "down") as "up" | "down",
-        }
-      : undefined;
+  const activePlans = plans.filter((p) => p.is_active);
 
   return (
     <div className="space-y-6">
-      {/* ── Hero Section ── */}
+      {/* ── Hero: Readiness Score ── */}
       <Card className="overflow-hidden">
         <div className="relative bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-6 md:p-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4">
-              {/* Avatar circle */}
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground text-xl font-bold font-display shadow-md">
                 {data.user.full_name.charAt(0).toUpperCase()}
               </div>
               <div>
                 <h1 className="text-2xl font-bold font-display tracking-tight">
-                  Welcome back, {data.user.full_name.split(" ")[0]}
+                  {readinessScore !== null
+                    ? `Your readiness score is ${readinessScore}%`
+                    : `Welcome back, ${data.user.full_name.split(" ")[0]}`}
                 </h1>
                 <p className="text-sm text-muted-foreground mt-0.5">
                   {data.profile.board} &middot; Class {data.profile.class_grade}{" "}
                   &middot; {data.profile.academic_year}
+                  {weeklyProgress !== null && (
+                    <span
+                      className={cn(
+                        "ml-2 inline-flex items-center gap-0.5 font-medium",
+                        weeklyProgress >= 0
+                          ? "text-green-600 dark:text-green-400"
+                          : "text-red-500 dark:text-red-400",
+                      )}
+                    >
+                      {weeklyProgress >= 0 ? (
+                        <ArrowUp className="h-3 w-3" />
+                      ) : (
+                        <ArrowDown className="h-3 w-3" />
+                      )}
+                      {Math.abs(weeklyProgress)}% this week
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
 
-            {/* Overall score ring */}
-            {data.average_score !== undefined &&
-              data.average_score !== null && (
-                <ScoreIndicator
-                  score={data.average_score}
-                  maxScore={100}
-                  size="lg"
-                  showPercentage
-                />
-              )}
+            {readinessScore !== null && (
+              <ScoreIndicator
+                score={readinessScore}
+                maxScore={100}
+                size="lg"
+                showPercentage
+              />
+            )}
           </div>
         </div>
       </Card>
 
-      {/* ── Stat Cards ── */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard
-          title="Exams Taken"
-          value={data.total_exams_taken}
-          icon={<GraduationCap className="h-5 w-5" />}
-          subtitle="Total assessments"
-        />
-        <StatCard
-          title="Average Score"
-          value={
-            data.average_score ? formatPercentage(data.average_score) : "N/A"
-          }
-          icon={<TrendingUp className="h-5 w-5" />}
-          trend={scoreTrend}
-          subtitle="Across all exams"
-        />
-        <StatCard
-          title="Active Plans"
-          value={data.active_learning_plans}
-          icon={<Target className="h-5 w-5" />}
-          subtitle="Learning paths"
-        />
-        <StatCard
-          title="Weak Areas"
-          value={data.weaknesses.length}
-          icon={<Zap className="h-5 w-5" />}
-          subtitle="Topics to improve"
-        />
+      {/* ── Actions Row ── */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {/* Upcoming exams */}
+        <Card className="transition-all hover:shadow-md hover:border-primary/30">
+          <CardContent className="p-5">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-blue-100 p-2.5 dark:bg-blue-900/30">
+                <Calendar className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold">
+                  {upcomingExams.length > 0
+                    ? `${upcomingExams.length} upcoming exam${upcomingExams.length !== 1 ? "s" : ""}`
+                    : "No upcoming exams"}
+                </p>
+                {upcomingExams.length > 0 && upcomingExams[0].start_at ? (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Next in {formatCountdown(upcomingExams[0].start_at)}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Check back later
+                  </p>
+                )}
+              </div>
+            </div>
+            {upcomingExams.length > 0 && (
+              <Link
+                to="/exams"
+                className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+              >
+                View exams <ChevronRight className="h-3 w-3" />
+              </Link>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Practice weakest topic */}
+        <Card className="transition-all hover:shadow-md hover:border-primary/30">
+          <CardContent className="p-5">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-amber-100 p-2.5 dark:bg-amber-900/30">
+                <Target className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                {weakestTopic ? (
+                  <>
+                    <p className="text-sm font-semibold">
+                      Practice {weakestTopic.topic}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Your weakest topic (
+                      {Math.round(weakestTopic.avg_score_pct)}% avg)
+                    </p>
+                  </>
+                ) : recommendedAction ? (
+                  <>
+                    <p className="text-sm font-semibold">AI Recommendation</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                      {recommendedAction}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-semibold">Start practicing</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Take exams to get topic recommendations
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+            <Link
+              to="/exams"
+              className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              Start practice <ChevronRight className="h-3 w-3" />
+            </Link>
+          </CardContent>
+        </Card>
+
+        {/* Score trend */}
+        <Card className="transition-all hover:shadow-md hover:border-primary/30">
+          <CardContent className="p-5">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-green-100 p-2.5 dark:bg-green-900/30">
+                <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold">
+                  {data.average_score
+                    ? `${Math.round(data.average_score)}% average`
+                    : "No scores yet"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {data.total_exams_taken} exam
+                  {data.total_exams_taken !== 1 ? "s" : ""} taken
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/learning"
+              className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              View learning plans <ChevronRight className="h-3 w-3" />
+            </Link>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* ── Upcoming Exams List ── */}
+      {upcomingExams.length > 0 && (
+        <DataCard
+          title="Upcoming Exams"
+          description="Exams assigned to your classes"
+          icon={<Calendar className="h-4 w-4" />}
+          action={
+            <Link
+              to="/exams"
+              className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1"
+            >
+              All Exams <ChevronRight className="h-3 w-3" />
+            </Link>
+          }
+        >
+          <div className="space-y-2">
+            {upcomingExams.slice(0, 5).map((exam: any, i: number) => (
+              <div
+                key={i}
+                className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-muted/30"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {exam.paper_title || exam.title || "Exam"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {exam.class_name && (
+                      <span>{exam.class_name} &middot; </span>
+                    )}
+                    {exam.label && <span>{exam.label} &middot; </span>}
+                    {exam.is_practice && "Practice"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 ml-3">
+                  {exam.start_at && (
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {formatCountdown(exam.start_at)}
+                    </span>
+                  )}
+                  <Badge
+                    variant={exam.status === "active" ? "success" : "secondary"}
+                  >
+                    {exam.status === "active" ? "Available" : exam.status}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        </DataCard>
+      )}
 
       {/* ── Charts Row ── */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Score Trend Chart */}
         <DataCard
           title="Score Trend"
           description="Your recent exam performance over time"
@@ -252,7 +434,6 @@ const StudentDashboard: React.FC = () => {
           )}
         </DataCard>
 
-        {/* Bloom's Radar */}
         <DataCard
           title="Cognitive Skills"
           description="Performance across Bloom's Taxonomy levels"
@@ -282,9 +463,8 @@ const StudentDashboard: React.FC = () => {
         </DataCard>
       )}
 
-      {/* ── Strengths & Weaknesses + Quick Practice ── */}
+      {/* ── Strengths & Weaknesses ── */}
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Strengths */}
         <DataCard
           title="Strengths"
           icon={<TrendingUp className="h-4 w-4" />}
@@ -292,13 +472,13 @@ const StudentDashboard: React.FC = () => {
         >
           {data.strengths.length > 0 ? (
             <div className="space-y-2">
-              {data.strengths.map((strength) => (
+              {data.strengths.map((s) => (
                 <div
-                  key={strength}
+                  key={s}
                   className="flex items-center gap-2 rounded-md bg-mastery-mastered/10 px-3 py-2 text-sm"
                 >
                   <span className="h-2 w-2 rounded-full bg-mastery-mastered" />
-                  <span className="text-foreground">{strength}</span>
+                  <span className="text-foreground">{s}</span>
                 </div>
               ))}
             </div>
@@ -309,7 +489,6 @@ const StudentDashboard: React.FC = () => {
           )}
         </DataCard>
 
-        {/* Weaknesses */}
         <DataCard
           title="Areas to Improve"
           icon={<Zap className="h-4 w-4" />}
@@ -317,13 +496,13 @@ const StudentDashboard: React.FC = () => {
         >
           {data.weaknesses.length > 0 ? (
             <div className="space-y-2">
-              {data.weaknesses.map((weakness) => (
+              {data.weaknesses.map((w) => (
                 <div
-                  key={weakness}
+                  key={w}
                   className="flex items-center gap-2 rounded-md bg-mastery-beginner/10 px-3 py-2 text-sm"
                 >
                   <span className="h-2 w-2 rounded-full bg-mastery-beginner" />
-                  <span className="text-foreground">{weakness}</span>
+                  <span className="text-foreground">{w}</span>
                 </div>
               ))}
             </div>
@@ -334,7 +513,7 @@ const StudentDashboard: React.FC = () => {
           )}
         </DataCard>
 
-        {/* Quick Practice Suggestion */}
+        {/* Quick Practice */}
         <Card className="flex flex-col overflow-hidden">
           <div className="bg-gradient-to-br from-primary/15 to-primary/5 p-6">
             <div className="flex items-center gap-2 mb-2">
@@ -432,106 +611,6 @@ const StudentDashboard: React.FC = () => {
           </div>
         </DataCard>
       )}
-
-      {/* ── Recent Scores Table ── */}
-      {data.recent_scores.length > 0 && (
-        <DataCard
-          title="Recent Exams"
-          description="Your latest exam results"
-          icon={<Calendar className="h-4 w-4" />}
-          action={
-            <Link
-              to="/exams"
-              className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1"
-            >
-              All Exams <ChevronRight className="h-3 w-3" />
-            </Link>
-          }
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="pb-2 pr-4 text-left text-xs font-medium text-muted-foreground">
-                    Exam
-                  </th>
-                  <th className="pb-2 pr-4 text-left text-xs font-medium text-muted-foreground">
-                    Subject
-                  </th>
-                  <th className="pb-2 pr-4 text-left text-xs font-medium text-muted-foreground">
-                    Score
-                  </th>
-                  <th className="pb-2 pr-4 text-left text-xs font-medium text-muted-foreground">
-                    Grade
-                  </th>
-                  <th className="pb-2 text-left text-xs font-medium text-muted-foreground">
-                    Date
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recent_scores.map((scoreEntry, entryIndex) => (
-                  <tr
-                    key={entryIndex}
-                    className="border-b border-border/50 last:border-0"
-                  >
-                    <td className="py-3 pr-4 font-medium">{scoreEntry.exam}</td>
-                    <td className="py-3 pr-4 text-muted-foreground">
-                      {scoreEntry.subject}
-                    </td>
-                    <td className="py-3 pr-4">
-                      <Badge
-                        variant={
-                          scoreEntry.score >= 80
-                            ? "success"
-                            : scoreEntry.score >= 60
-                              ? "info"
-                              : scoreEntry.score >= 40
-                                ? "warning"
-                                : "destructive"
-                        }
-                      >
-                        {scoreEntry.score}%
-                      </Badge>
-                    </td>
-                    <td
-                      className={cn(
-                        "py-3 pr-4 font-semibold",
-                        getGradeColor(scoreEntry.grade),
-                      )}
-                    >
-                      {scoreEntry.grade}
-                    </td>
-                    <td className="py-3 text-muted-foreground">
-                      {scoreEntry.date
-                        ? new Date(scoreEntry.date).toLocaleDateString()
-                        : "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </DataCard>
-      )}
-
-      {/* ── Quick Actions ── */}
-      <div className="grid grid-cols-2 gap-4">
-        <Link
-          to="/exams"
-          className="flex items-center justify-center gap-2 rounded-lg border bg-card p-4 text-sm font-medium transition-all hover:shadow-md hover:border-primary/30 hover:bg-primary/5"
-        >
-          <GraduationCap className="h-5 w-5 text-primary" />
-          Take an Exam
-        </Link>
-        <Link
-          to="/learning"
-          className="flex items-center justify-center gap-2 rounded-lg border bg-card p-4 text-sm font-medium transition-all hover:shadow-md hover:border-primary/30 hover:bg-primary/5"
-        >
-          <BookOpen className="h-5 w-5 text-primary" />
-          View Learning Plans
-        </Link>
-      </div>
     </div>
   );
 };

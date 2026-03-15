@@ -1,4 +1,4 @@
-"""API dependencies - authentication, current user, etc."""
+"""API dependencies - authentication, current user, workspace context."""
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -29,6 +29,10 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    # Attach workspace context from JWT (single decode, no extra DB lookup)
+    user._workspace_id = payload.get("workspace_id")
+    user._workspace_role = payload.get("workspace_role")
     return user
 
 
@@ -52,4 +56,20 @@ async def require_teacher_or_admin(
 ) -> User:
     if user.role not in (UserRole.TEACHER, UserRole.ADMIN):
         raise HTTPException(status_code=403, detail="Teacher or admin access required")
+    return user
+
+
+def get_current_workspace(user: User) -> int | None:
+    """Return the active workspace_id from the User object (set by get_current_user)."""
+    return getattr(user, "_workspace_id", None)
+
+
+def require_workspace_admin(user: User = Depends(get_current_user)) -> User:
+    """Require the user to be a workspace owner or admin."""
+    ws_role = getattr(user, "_workspace_role", None)
+    if ws_role not in ("owner", "admin"):
+        raise HTTPException(
+            status_code=403,
+            detail="Workspace owner or admin access required",
+        )
     return user

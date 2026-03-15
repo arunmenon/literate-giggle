@@ -1,7 +1,8 @@
 """Curriculum CRUD and document upload routes."""
 
 import os
-import shutil
+import pathlib
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -188,11 +189,33 @@ async def upload_document(
         if not chapter:
             raise HTTPException(status_code=404, detail="Chapter not found")
 
-    # Save file
+    # Save file with path traversal protection
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
+
+    # Sanitize filename: strip directory components and generate a safe name
+    original_name = pathlib.Path(file.filename).name
+    safe_name = f"{uuid.uuid4().hex}_{original_name}"
+    file_path = os.path.join(UPLOAD_DIR, safe_name)
+
+    # Validate resolved path is within UPLOAD_DIR
+    resolved = pathlib.Path(file_path).resolve()
+    upload_dir_resolved = pathlib.Path(UPLOAD_DIR).resolve()
+    if not str(resolved).startswith(str(upload_dir_resolved)):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # File size limit (50MB)
+    MAX_UPLOAD_SIZE = 50 * 1024 * 1024
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (max 50MB)")
+
+    # Validate PDF magic bytes
+    if not content[:5] == b'%PDF-':
+        raise HTTPException(status_code=400, detail="File is not a valid PDF")
+
+    # Write file
     with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        f.write(content)
 
     # Try PDF ingestion if available
     extracted_text = None
@@ -208,7 +231,7 @@ async def upload_document(
     doc = UploadedDocument(
         teacher_id=user.id,
         chapter_id=chapter_id,
-        filename=file.filename,
+        filename=original_name,
         file_path=file_path,
         content_type=content_type,
         extracted_text=extracted_text,
@@ -234,8 +257,10 @@ async def list_documents(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """List uploaded documents, optionally filtered by chapter."""
-    query = select(UploadedDocument).order_by(UploadedDocument.uploaded_at.desc())
+    """List uploaded documents, filtered by ownership (teacher_id)."""
+    query = select(UploadedDocument).where(
+        UploadedDocument.teacher_id == user.id
+    ).order_by(UploadedDocument.uploaded_at.desc())
     if chapter_id:
         query = query.where(UploadedDocument.chapter_id == chapter_id)
 

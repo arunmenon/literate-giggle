@@ -66,7 +66,7 @@ class Evaluation(Base):
     is_final = Column(Boolean, default=False)
 
     session = relationship("ExamSession", back_populates="evaluation")
-    question_evaluations = relationship("QuestionEvaluation", back_populates="evaluation")
+    question_evaluations = relationship("QuestionEvaluation", back_populates="evaluation", cascade="all, delete-orphan")
 
 
 class QuestionEvaluation(Base):

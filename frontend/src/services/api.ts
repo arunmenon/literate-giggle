@@ -127,6 +127,37 @@ export const aiAPI = {
     api.post("/ai/explain", data),
 };
 
+// ── Workspace ──
+
+export const workspaceAPI = {
+  create: (data: { name: string; type: "personal" | "school" }) =>
+    api.post("/workspace", data),
+  get: () => api.get("/workspace"),
+  getMembers: () => api.get("/workspace/members"),
+  generateInviteCode: () => api.post("/workspace/invite"),
+  joinByCode: (data: { invite_code: string }) =>
+    api.post("/workspace/join", data),
+  getMine: () => api.get("/workspace/mine"),
+  switchWorkspace: (data: { workspace_id: number }) =>
+    api.post("/auth/switch-workspace", data),
+};
+
+// ── Classes ──
+
+export const classAPI = {
+  create: (data: any) => api.post("/classes", data),
+  list: () => api.get("/classes"),
+  getStudents: (classId: number) => api.get(`/classes/${classId}/students`),
+  enrollStudent: (classId: number, data: any) =>
+    api.post(`/classes/${classId}/enroll`, data),
+  removeStudent: (classId: number, studentId: number) =>
+    api.delete(`/classes/${classId}/enroll/${studentId}`),
+  assignExam: (classId: number, data: any) =>
+    api.post(`/classes/${classId}/assign-exam`, data),
+  getAssignments: (classId: number) =>
+    api.get(`/classes/${classId}/assignments`),
+};
+
 // ── Curriculum ──
 
 export const curriculumAPI = {

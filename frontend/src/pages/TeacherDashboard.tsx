@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { dashboardAPI, questionAPI, paperAPI } from "../services/api";
+import { dashboardAPI, questionAPI, paperAPI, classAPI } from "../services/api";
+import type { ClassGroup } from "../types";
 import {
   Card,
   CardContent,
@@ -25,20 +26,30 @@ import {
   ChevronRight,
   BookOpen,
   TrendingUp,
-  Award,
   Clock,
-  CheckCircle,
   Target,
+  AlertCircle,
+  Bell,
+  ClipboardList,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
-/*  Types for teacher dashboard data                                    */
+/*  Types                                                               */
 /* ------------------------------------------------------------------ */
 
 interface TeacherStats {
   papers_created: number;
   total_exam_sessions: number;
   average_student_score?: number;
+  pending_reviews?: number;
+  class_alerts?: Array<{ class_name: string; alert_text: string }>;
+  upcoming_assignments?: any[];
+  classes?: Array<{
+    id: number;
+    name: string;
+    student_count: number;
+    avg_score?: number;
+  }>;
 }
 
 interface PaperSummary {
@@ -99,9 +110,9 @@ function DashboardSkeleton() {
   return (
     <div className="space-y-6">
       <Skeleton className="h-24 rounded-lg" />
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, idx) => (
-          <Skeleton key={idx} className="h-28 rounded-lg" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-28 rounded-lg" />
         ))}
       </div>
       <div className="grid gap-6 md:grid-cols-2">
@@ -120,6 +131,7 @@ const TeacherDashboard: React.FC = () => {
   const [stats, setStats] = useState<TeacherStats | null>(null);
   const [papers, setPapers] = useState<PaperSummary[]>([]);
   const [banks, setBanks] = useState<BankSummary[]>([]);
+  const [classes, setClasses] = useState<ClassGroup[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -127,29 +139,27 @@ const TeacherDashboard: React.FC = () => {
       dashboardAPI.teacherStats().catch(() => ({ data: null })),
       paperAPI.list().catch(() => ({ data: [] })),
       questionAPI.listBanks().catch(() => ({ data: [] })),
-    ]).then(([statsRes, papersRes, banksRes]) => {
+      classAPI.list().catch(() => ({ data: [] })),
+    ]).then(([statsRes, papersRes, banksRes, classesRes]) => {
       setStats(statsRes.data);
       setPapers(Array.isArray(papersRes.data) ? papersRes.data : []);
       setBanks(Array.isArray(banksRes.data) ? banksRes.data : []);
+      setClasses(Array.isArray(classesRes.data) ? classesRes.data : []);
       setLoading(false);
     });
   }, []);
 
   if (loading) return <DashboardSkeleton />;
 
-  const totalQuestions = banks.reduce(
-    (sum, bank) => sum + bank.question_count,
-    0,
-  );
+  const totalQuestions = banks.reduce((s, b) => s + b.question_count, 0);
 
-  // Group papers by status for the lifecycle view
+  // Papers by status for lifecycle
   const papersByStatus: Record<string, number> = {};
   for (const paper of papers) {
-    const statusKey = paper.status.toLowerCase();
-    papersByStatus[statusKey] = (papersByStatus[statusKey] || 0) + 1;
+    const key = paper.status.toLowerCase();
+    papersByStatus[key] = (papersByStatus[key] || 0) + 1;
   }
 
-  // Recent papers (last 5, sorted by creation date)
   const recentPapers = [...papers]
     .sort(
       (a, b) =>
@@ -157,14 +167,24 @@ const TeacherDashboard: React.FC = () => {
     )
     .slice(0, 5);
 
-  // Subject distribution for question banks
+  // Action-oriented data
+  const pendingReviews = stats?.pending_reviews ?? 0;
+  const classAlerts = stats?.class_alerts ?? [];
+  const upcomingAssignments = stats?.upcoming_assignments ?? [];
+  const classOverview = stats?.classes ?? [];
+
+  // Count items needing attention
+  const attentionCount =
+    pendingReviews + classAlerts.length + (papersByStatus["draft"] ?? 0);
+
+  // Subject distribution
   const subjectDistribution: Record<string, number> = {};
   for (const bank of banks) {
     subjectDistribution[bank.subject] =
       (subjectDistribution[bank.subject] || 0) + bank.question_count;
   }
 
-  // Difficulty breakdown mock based on available data
+  // Difficulty breakdown
   const difficultyData = [
     {
       difficulty: "Easy",
@@ -185,18 +205,25 @@ const TeacherDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* ── Hero Section ── */}
+      {/* ── Hero: Attention Needed ── */}
       <Card className="overflow-hidden">
         <div className="relative bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-6 md:p-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold font-display tracking-tight">
-                Teacher Dashboard
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                Manage your question banks, papers, and track student
-                performance.
-              </p>
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+                <Bell className="h-7 w-7 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold font-display tracking-tight">
+                  {attentionCount > 0
+                    ? `${attentionCount} item${attentionCount !== 1 ? "s" : ""} need your attention`
+                    : "All caught up!"}
+                </h1>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {papers.length} papers &middot; {totalQuestions} questions
+                  &middot; {classes.length} classes
+                </p>
+              </div>
             </div>
             <div className="flex gap-3">
               <Link to="/questions">
@@ -215,6 +242,151 @@ const TeacherDashboard: React.FC = () => {
           </div>
         </div>
       </Card>
+
+      {/* ── Actions Row ── */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {/* Pending AI reviews */}
+        <Link to="/questions">
+          <Card className="h-full transition-all hover:shadow-md hover:border-primary/30">
+            <CardContent className="p-5">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-purple-100 p-2.5 dark:bg-purple-900/30">
+                  <Sparkles className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold">
+                    {pendingReviews > 0
+                      ? `Review ${pendingReviews} AI-generated question${pendingReviews !== 1 ? "s" : ""}`
+                      : "Generate new questions"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {pendingReviews > 0
+                      ? "Questions waiting for your approval"
+                      : "Use AI to create curriculum-aligned content"}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
+        {/* Draft papers */}
+        <Link to="/papers">
+          <Card className="h-full transition-all hover:shadow-md hover:border-primary/30">
+            <CardContent className="p-5">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-amber-100 p-2.5 dark:bg-amber-900/30">
+                  <FileText className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold">
+                    {(papersByStatus["draft"] ?? 0) > 0
+                      ? `${papersByStatus["draft"]} paper${papersByStatus["draft"] !== 1 ? "s" : ""} in draft`
+                      : "Create a paper"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {(papersByStatus["draft"] ?? 0) > 0
+                      ? "Papers needing completion"
+                      : "Build a new question paper"}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
+        {/* Class alerts */}
+        <Link to="/classes">
+          <Card className="h-full transition-all hover:shadow-md hover:border-primary/30">
+            <CardContent className="p-5">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-red-100 p-2.5 dark:bg-red-900/30">
+                  <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  {classAlerts.length > 0 ? (
+                    <>
+                      <p className="text-sm font-semibold">
+                        {classAlerts[0].class_name} alert
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                        {classAlerts[0].alert_text}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-semibold">
+                        {classes.length > 0
+                          ? `${classes.length} class${classes.length !== 1 ? "es" : ""} active`
+                          : "Set up a class"}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {classes.length > 0
+                          ? "All classes performing well"
+                          : "Create classes and enroll students"}
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+
+      {/* ── Class Overview ── */}
+      {(classOverview.length > 0 || classes.length > 0) && (
+        <DataCard
+          title="Class Overview"
+          description="Your classes at a glance"
+          icon={<Users className="h-4 w-4" />}
+          action={
+            <Link
+              to="/classes"
+              className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1"
+            >
+              Manage <ChevronRight className="h-3 w-3" />
+            </Link>
+          }
+        >
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {(classOverview.length > 0 ? classOverview : classes).map(
+              (cls: any) => (
+                <Link key={cls.id} to="/classes" className="block">
+                  <Card className="p-4 transition-all hover:shadow-md hover:border-primary/30">
+                    <div className="flex items-start justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate">
+                          {cls.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {cls.student_count ?? 0} students
+                        </p>
+                      </div>
+                      {cls.avg_score !== undefined &&
+                        cls.avg_score !== null && (
+                          <Badge
+                            variant={
+                              cls.avg_score >= 80
+                                ? "success"
+                                : cls.avg_score >= 60
+                                  ? "info"
+                                  : cls.avg_score >= 40
+                                    ? "warning"
+                                    : "destructive"
+                            }
+                          >
+                            {Math.round(cls.avg_score)}% avg
+                          </Badge>
+                        )}
+                    </div>
+                  </Card>
+                </Link>
+              ),
+            )}
+          </div>
+        </DataCard>
+      )}
 
       {/* ── Stat Cards ── */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -255,7 +427,7 @@ const TeacherDashboard: React.FC = () => {
         icon={<Target className="h-4 w-4" />}
       >
         <div className="flex items-center gap-2 overflow-x-auto pb-2">
-          {LIFECYCLE_STAGES.map((stage, stageIndex) => {
+          {LIFECYCLE_STAGES.map((stage, i) => {
             const count = papersByStatus[stage.toLowerCase()] ?? 0;
             return (
               <React.Fragment key={stage}>
@@ -279,7 +451,7 @@ const TeacherDashboard: React.FC = () => {
                     {stage}
                   </Badge>
                 </div>
-                {stageIndex < LIFECYCLE_STAGES.length - 1 && (
+                {i < LIFECYCLE_STAGES.length - 1 && (
                   <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                 )}
               </React.Fragment>
@@ -288,9 +460,8 @@ const TeacherDashboard: React.FC = () => {
         </div>
       </DataCard>
 
-      {/* ── Content Row: Question Banks + Difficulty Breakdown ── */}
+      {/* ── Content Row ── */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Question Bank Overview */}
         <DataCard
           title="Question Banks"
           description={`${banks.length} banks with ${totalQuestions} questions`}
@@ -306,20 +477,19 @@ const TeacherDashboard: React.FC = () => {
         >
           {banks.length > 0 ? (
             <div className="space-y-3">
-              {/* Subject distribution bars */}
               {Object.entries(subjectDistribution)
-                .sort(([, countA], [, countB]) => countB - countA)
+                .sort(([, a], [, b]) => b - a)
                 .slice(0, 6)
-                .map(([subject, questionCount]) => (
+                .map(([subject, count]) => (
                   <div key={subject} className="space-y-1">
                     <div className="flex items-center justify-between text-sm">
                       <span className="font-medium">{subject}</span>
                       <span className="text-muted-foreground">
-                        {questionCount} questions
+                        {count} questions
                       </span>
                     </div>
                     <Progress
-                      value={questionCount}
+                      value={count}
                       max={Math.max(...Object.values(subjectDistribution))}
                       className="h-2"
                     />
@@ -342,7 +512,6 @@ const TeacherDashboard: React.FC = () => {
           )}
         </DataCard>
 
-        {/* Student Performance Breakdown */}
         <DataCard
           title="Student Performance by Difficulty"
           description="Average scores across difficulty levels"
@@ -423,52 +592,6 @@ const TeacherDashboard: React.FC = () => {
           </div>
         )}
       </DataCard>
-
-      {/* ── Quick Actions ── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Link
-          to="/questions"
-          className="flex items-center gap-3 rounded-lg border bg-card p-4 transition-all hover:shadow-md hover:border-primary/30 hover:bg-primary/5"
-        >
-          <div className="rounded-lg bg-primary/10 p-2.5">
-            <BookOpen className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold">Manage Questions</p>
-            <p className="text-xs text-muted-foreground">
-              Browse and edit question banks
-            </p>
-          </div>
-        </Link>
-        <Link
-          to="/questions"
-          className="flex items-center gap-3 rounded-lg border bg-card p-4 transition-all hover:shadow-md hover:border-primary/30 hover:bg-primary/5"
-        >
-          <div className="rounded-lg bg-mastery-mastered/10 p-2.5">
-            <Sparkles className="h-5 w-5 text-mastery-mastered" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold">AI Generate</p>
-            <p className="text-xs text-muted-foreground">
-              Generate questions with AI
-            </p>
-          </div>
-        </Link>
-        <Link
-          to="/papers"
-          className="flex items-center gap-3 rounded-lg border bg-card p-4 transition-all hover:shadow-md hover:border-primary/30 hover:bg-primary/5"
-        >
-          <div className="rounded-lg bg-mastery-proficient/10 p-2.5">
-            <FileText className="h-5 w-5 text-mastery-proficient" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold">Create Paper</p>
-            <p className="text-xs text-muted-foreground">
-              Build a new question paper
-            </p>
-          </div>
-        </Link>
-      </div>
     </div>
   );
 };

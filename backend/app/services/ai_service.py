@@ -86,7 +86,7 @@ class AIService:
 
         try:
             import openai
-            self._client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+            self._client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
             logger.info("AI service initialized successfully")
             return True
         except ImportError:
@@ -135,7 +135,7 @@ class AIService:
                 messages.append({"role": "system", "content": system})
             messages.append({"role": "user", "content": prompt})
 
-            response = self._client.chat.completions.create(
+            response = await self._client.chat.completions.create(
                 model=resolved_model,
                 messages=messages,
                 max_tokens=resolved_max_tokens,
@@ -224,7 +224,7 @@ class AIService:
                 messages.append({"role": "system", "content": system})
             messages.append({"role": "user", "content": prompt})
 
-            response = self._client.chat.completions.create(
+            response = await self._client.chat.completions.create(
                 model=resolved_model,
                 messages=messages,
                 max_tokens=resolved_max_tokens,
@@ -232,7 +232,7 @@ class AIService:
                 stream=True,
             )
 
-            for chunk in response:
+            async for chunk in response:
                 if chunk.choices and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
 

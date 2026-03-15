@@ -38,7 +38,9 @@ import {
   Brain,
   Layers,
   BookOpen,
+  Download,
 } from "lucide-react";
+import api from "../services/api";
 
 const EXAM_TYPES = [
   { value: "Unit Test", label: "Unit Test" },
@@ -299,6 +301,25 @@ const PapersPage: React.FC = () => {
       alert(err.response?.data?.detail || "Failed to save paper");
     } finally {
       setSavingPaper(false);
+    }
+  };
+
+  const exportPDF = async (paperId: number, title: string) => {
+    try {
+      const response = await api.get(`/papers/${paperId}/export/pdf`, {
+        responseType: "blob",
+      });
+      const blob = new Blob([response.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${title.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Failed to export PDF");
     }
   };
 
@@ -1024,6 +1045,15 @@ const PapersPage: React.FC = () => {
                     </p>
                   </div>
                   <div className="flex gap-1.5 flex-shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => exportPDF(paper.id, paper.title)}
+                      className="text-xs gap-1"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      PDF
+                    </Button>
                     {getNextStatuses(paper.status).map((ns) => (
                       <Button
                         key={ns}

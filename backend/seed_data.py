@@ -1,4 +1,4 @@
-"""Seed script to populate database with comprehensive CBSE/ICSE question banks."""
+"""Seed script to populate database with comprehensive CBSE/ICSE question banks and workspace data."""
 
 import asyncio
 import json
@@ -9,6 +9,10 @@ from app.models.user import User, StudentProfile, TeacherProfile, UserRole
 from app.models.exam import (
     QuestionBank, Question, QuestionPaper, PaperQuestion,
     QuestionType, DifficultyLevel, BloomsTaxonomy, PaperStatus,
+)
+from app.models.workspace import (
+    Workspace, WorkspaceMember, ClassGroup, Enrollment, ExamAssignment,
+    generate_invite_code,
 )
 
 QT = QuestionType
@@ -100,11 +104,90 @@ async def seed():
         await db.flush()
 
         # ══════════════════════════════════════════
+        # WORKSPACES
+        # ══════════════════════════════════════════
+
+        # Teacher1's personal workspace
+        ws1 = Workspace(
+            name="Dr. Sharma's Classroom",
+            type="personal",
+            owner_id=teacher.id,
+            invite_code=generate_invite_code(),
+        )
+        db.add(ws1)
+        await db.flush()
+        db.add(WorkspaceMember(workspace_id=ws1.id, user_id=teacher.id, role="owner"))
+        teacher.active_workspace_id = ws1.id
+
+        # Teacher2's personal workspace
+        ws2 = Workspace(
+            name="Ms. Menon's Classroom",
+            type="personal",
+            owner_id=teacher2.id,
+            invite_code=generate_invite_code(),
+        )
+        db.add(ws2)
+        await db.flush()
+        db.add(WorkspaceMember(workspace_id=ws2.id, user_id=teacher2.id, role="owner"))
+        teacher2.active_workspace_id = ws2.id
+
+        # Teacher3's personal workspace
+        ws3 = Workspace(
+            name="Mr. Iyer's Classroom",
+            type="personal",
+            owner_id=teacher3.id,
+            invite_code=generate_invite_code(),
+        )
+        db.add(ws3)
+        await db.flush()
+        db.add(WorkspaceMember(workspace_id=ws3.id, user_id=teacher3.id, role="owner"))
+        teacher3.active_workspace_id = ws3.id
+
+        # Student1 joins Teacher1's workspace
+        db.add(WorkspaceMember(workspace_id=ws1.id, user_id=student.id, role="student"))
+        student.active_workspace_id = ws1.id
+
+        # Student2 gets own personal workspace (self-study)
+        ws4 = Workspace(
+            name="Priya's Study Space",
+            type="personal",
+            owner_id=student2.id,
+            invite_code=generate_invite_code(),
+        )
+        db.add(ws4)
+        await db.flush()
+        db.add(WorkspaceMember(workspace_id=ws4.id, user_id=student2.id, role="owner"))
+        student2.active_workspace_id = ws4.id
+
+        await db.flush()
+
+        # ══════════════════════════════════════════
+        # CLASS GROUPS & ENROLLMENTS
+        # ══════════════════════════════════════════
+
+        # Teacher1's class
+        class_10a = ClassGroup(
+            workspace_id=ws1.id,
+            name="Class 10-A",
+            grade=10,
+            section="A",
+            subject="Mathematics",
+            academic_year="2025-26",
+            teacher_id=teacher.id,
+        )
+        db.add(class_10a)
+        await db.flush()
+
+        # Enroll student1 in class
+        db.add(Enrollment(class_id=class_10a.id, student_id=sp1.id))
+        await db.flush()
+
+        # ══════════════════════════════════════════
         # CBSE CLASS 10 MATHEMATICS
         # ══════════════════════════════════════════
         math_bank = QuestionBank(name="CBSE Class 10 Mathematics", board="CBSE",
             class_grade=10, subject="Mathematics", chapter="All Chapters",
-            created_by=teacher.id)
+            created_by=teacher.id, workspace_id=ws1.id)
         db.add(math_bank)
         await db.flush()
 
@@ -167,16 +250,15 @@ async def seed():
         await db.flush()
 
         # ══════════════════════════════════════════
-        # CBSE CLASS 10 SCIENCE
+        # CBSE CLASS 10 SCIENCE (workspace: Teacher2)
         # ══════════════════════════════════════════
         sci_bank = QuestionBank(name="CBSE Class 10 Science", board="CBSE",
             class_grade=10, subject="Science", chapter="All Chapters",
-            created_by=teacher2.id)
+            created_by=teacher2.id, workspace_id=ws2.id)
         db.add(sci_bank)
         await db.flush()
 
         sci_qs = [
-            # Physics
             q(sci_bank.id, QT.MCQ, "The SI unit of electric current is:", 1, DL.EASY, BT.REMEMBER, "Electricity", subtopic="Current",
               mcq_options={"a": "Volt", "b": "Ampere", "c": "Ohm", "d": "Watt"}, correct_option="b"),
             q(sci_bank.id, QT.MCQ, "A concave mirror produces a real and inverted image of the same size as the object. The object is placed at:", 1, DL.MEDIUM, BT.UNDERSTAND, "Light - Reflection and Refraction", subtopic="Concave Mirror",
@@ -196,7 +278,6 @@ async def seed():
                   {"step": "Current formula and calculation", "marks": 1.5, "keywords": ["V/R", "220/20", "11"]},
                   {"step": "Power formula and calculation", "marks": 1.5, "keywords": ["P = VI", "2420", "kW"]},
               ]),
-            # Chemistry
             q(sci_bank.id, QT.MCQ, "The chemical formula of baking soda is:", 1, DL.EASY, BT.REMEMBER, "Acids, Bases and Salts", subtopic="Salts",
               mcq_options={"a": "NaCl", "b": "Na₂CO₃", "c": "NaHCO₃", "d": "NaOH"}, correct_option="c"),
             q(sci_bank.id, QT.MCQ, "Which gas is evolved when dilute HCl reacts with zinc?", 1, DL.EASY, BT.REMEMBER, "Chemical Reactions and Equations",
@@ -210,7 +291,6 @@ async def seed():
             q(sci_bank.id, QT.LONG_ANSWER, "What is a chemical equation? Why should it be balanced? Explain with an example. Describe the different types of chemical reactions with one example each.", 5, DL.HARD, BT.ANALYZE, "Chemical Reactions and Equations",
               model_answer="A chemical equation is a symbolic representation of a chemical reaction using formulae of reactants and products. It must be balanced to satisfy the law of conservation of mass. Types: 1) Combination: 2Mg + O₂ → 2MgO. 2) Decomposition: 2FeSO₄ → Fe₂O₃ + SO₂ + SO₃. 3) Displacement: Zn + CuSO₄ → ZnSO₄ + Cu. 4) Double displacement: NaCl + AgNO₃ → AgCl + NaNO₃.",
               answer_keywords=["symbolic representation", "conservation of mass", "balanced", "combination", "decomposition", "displacement", "double displacement"]),
-            # Biology
             q(sci_bank.id, QT.MCQ, "Which of the following is the correct sequence of organs in the human alimentary canal?", 1, DL.EASY, BT.REMEMBER, "Life Processes", subtopic="Nutrition",
               mcq_options={"a": "Mouth → Stomach → Small intestine → Large intestine → Oesophagus", "b": "Mouth → Oesophagus → Stomach → Large intestine → Small intestine", "c": "Mouth → Oesophagus → Stomach → Small intestine → Large intestine", "d": "Mouth → Stomach → Oesophagus → Small intestine → Large intestine"}, correct_option="c"),
             q(sci_bank.id, QT.SHORT_ANSWER, "Draw a diagram of the human heart and label the four chambers. Explain the flow of blood through the heart.", 5, DL.HARD, BT.UNDERSTAND, "Life Processes", subtopic="Transportation",
@@ -227,11 +307,11 @@ async def seed():
         await db.flush()
 
         # ══════════════════════════════════════════
-        # CBSE CLASS 10 ENGLISH
+        # CBSE CLASS 10 ENGLISH (workspace: Teacher3)
         # ══════════════════════════════════════════
         eng_bank = QuestionBank(name="CBSE Class 10 English", board="CBSE",
             class_grade=10, subject="English", chapter="Grammar & Writing",
-            created_by=teacher3.id)
+            created_by=teacher3.id, workspace_id=ws3.id)
         db.add(eng_bank)
         await db.flush()
 
@@ -265,16 +345,15 @@ async def seed():
         await db.flush()
 
         # ══════════════════════════════════════════
-        # CBSE CLASS 10 SOCIAL STUDIES
+        # CBSE CLASS 10 SOCIAL STUDIES (workspace: Teacher3)
         # ══════════════════════════════════════════
         sst_bank = QuestionBank(name="CBSE Class 10 Social Studies", board="CBSE",
             class_grade=10, subject="Social Studies", chapter="All Chapters",
-            created_by=teacher3.id)
+            created_by=teacher3.id, workspace_id=ws3.id)
         db.add(sst_bank)
         await db.flush()
 
         sst_qs = [
-            # History
             q(sst_bank.id, QT.MCQ, "The Civil Disobedience Movement was launched by Mahatma Gandhi in:", 1, DL.EASY, BT.REMEMBER, "History", subtopic="Nationalism in India",
               mcq_options={"a": "1920", "b": "1930", "c": "1942", "d": "1919"}, correct_option="b"),
             q(sst_bank.id, QT.MCQ, "The French Revolution began in the year:", 1, DL.EASY, BT.REMEMBER, "History", subtopic="French Revolution",
@@ -282,7 +361,6 @@ async def seed():
             q(sst_bank.id, QT.SHORT_ANSWER, "Explain the significance of the Salt March (Dandi March) in India's freedom struggle.", 3, DL.MEDIUM, BT.UNDERSTAND, "History", subtopic="Nationalism in India",
               model_answer="The Salt March (March 12 - April 6, 1930) was significant because: 1) It challenged the British monopoly on salt production, 2) It mobilized millions of Indians across castes, 3) It gained international attention and sympathy, 4) It demonstrated the power of non-violent civil disobedience, 5) It united diverse sections of Indian society.",
               answer_keywords=["1930", "salt tax", "non-violent", "civil disobedience", "British monopoly", "international", "Gandhi", "Dandi"]),
-            # Geography
             q(sst_bank.id, QT.MCQ, "Black soil is most suitable for growing:", 1, DL.EASY, BT.REMEMBER, "Geography", subtopic="Soil Types",
               mcq_options={"a": "Wheat", "b": "Cotton", "c": "Rice", "d": "Tea"}, correct_option="b"),
             q(sst_bank.id, QT.SHORT_ANSWER, "Distinguish between renewable and non-renewable resources with examples.", 3, DL.EASY, BT.UNDERSTAND, "Geography", subtopic="Resources and Development",
@@ -291,13 +369,11 @@ async def seed():
             q(sst_bank.id, QT.LONG_ANSWER, "Why is conservation of resources necessary? Explain different ways to conserve resources.", 5, DL.MEDIUM, BT.ANALYZE, "Geography", subtopic="Resources and Development",
               model_answer="Conservation is necessary because: 1) Resources are limited, 2) Over-exploitation leads to ecological imbalance, 3) Future generations need resources. Ways: reduce consumption, reuse products, recycle waste, use renewable energy, afforestation, rainwater harvesting, sustainable agriculture.",
               answer_keywords=["limited", "future generations", "ecological", "reduce", "reuse", "recycle", "renewable energy", "sustainable", "afforestation"]),
-            # Civics
             q(sst_bank.id, QT.MCQ, "How many subjects are there in the Union List of the Indian Constitution?", 1, DL.MEDIUM, BT.REMEMBER, "Civics", subtopic="Federalism",
               mcq_options={"a": "52", "b": "66", "c": "97", "d": "47"}, correct_option="c"),
             q(sst_bank.id, QT.SHORT_ANSWER, "What is federalism? Explain the key features of the Indian federal system.", 3, DL.MEDIUM, BT.UNDERSTAND, "Civics", subtopic="Federalism",
               model_answer="Federalism is a system where power is divided between central and state governments. Key features of Indian federalism: 1) Written Constitution, 2) Division of powers (Union, State, Concurrent lists), 3) Independent judiciary, 4) Supremacy of Constitution, 5) Bicameral legislature at centre.",
               answer_keywords=["division of powers", "central", "state", "written constitution", "independent judiciary", "union list", "state list", "concurrent"]),
-            # Economics
             q(sst_bank.id, QT.MCQ, "The primary sector is also called:", 1, DL.EASY, BT.REMEMBER, "Economics", subtopic="Sectors of Economy",
               mcq_options={"a": "Industrial sector", "b": "Service sector", "c": "Agricultural sector", "d": "Manufacturing sector"}, correct_option="c"),
             q(sst_bank.id, QT.SHORT_ANSWER, "What is GDP? How is it calculated? Why is it used as a measure of development?", 3, DL.MEDIUM, BT.UNDERSTAND, "Economics", subtopic="Development",
@@ -309,11 +385,11 @@ async def seed():
         await db.flush()
 
         # ══════════════════════════════════════════
-        # ICSE CLASS 10 MATHEMATICS
+        # ICSE CLASS 10 MATHEMATICS (workspace: Teacher1)
         # ══════════════════════════════════════════
         icse_math_bank = QuestionBank(name="ICSE Class 10 Mathematics", board="ICSE",
             class_grade=10, subject="Mathematics", chapter="All Chapters",
-            created_by=teacher.id)
+            created_by=teacher.id, workspace_id=ws1.id)
         db.add(icse_math_bank)
         await db.flush()
 
@@ -345,11 +421,11 @@ async def seed():
         await db.flush()
 
         # ══════════════════════════════════════════
-        # ICSE CLASS 10 ENGLISH
+        # ICSE CLASS 10 ENGLISH (workspace: Teacher3)
         # ══════════════════════════════════════════
         icse_eng_bank = QuestionBank(name="ICSE Class 10 English", board="ICSE",
             class_grade=10, subject="English", chapter="Literature & Grammar",
-            created_by=teacher3.id)
+            created_by=teacher3.id, workspace_id=ws3.id)
         db.add(icse_eng_bank)
         await db.flush()
 
@@ -371,11 +447,11 @@ async def seed():
         await db.flush()
 
         # ══════════════════════════════════════════
-        # CBSE CLASS 9 MATHEMATICS (extensibility demo)
+        # CBSE CLASS 9 MATHEMATICS (workspace: Teacher1)
         # ══════════════════════════════════════════
         math9_bank = QuestionBank(name="CBSE Class 9 Mathematics", board="CBSE",
             class_grade=9, subject="Mathematics", chapter="All Chapters",
-            created_by=teacher.id)
+            created_by=teacher.id, workspace_id=ws1.id)
         db.add(math9_bank)
         await db.flush()
 
@@ -399,11 +475,11 @@ async def seed():
         await db.flush()
 
         # ══════════════════════════════════════════
-        # CBSE CLASS 8 SCIENCE (lower class demo)
+        # CBSE CLASS 8 SCIENCE (workspace: Teacher2)
         # ══════════════════════════════════════════
         sci8_bank = QuestionBank(name="CBSE Class 8 Science", board="CBSE",
             class_grade=8, subject="Science", chapter="All Chapters",
-            created_by=teacher2.id)
+            created_by=teacher2.id, workspace_id=ws2.id)
         db.add(sci8_bank)
         await db.flush()
 
@@ -424,10 +500,10 @@ async def seed():
         await db.flush()
 
         # ══════════════════════════════════════════
-        # QUESTION PAPERS
+        # QUESTION PAPERS (with workspace_id)
         # ══════════════════════════════════════════
 
-        # Paper 1: CBSE Class 10 Math Unit Test
+        # Paper 1: CBSE Class 10 Math Unit Test (Teacher1's workspace)
         paper1 = QuestionPaper(
             title="CBSE Class 10 Mathematics - Unit Test 1",
             board="CBSE", class_grade=10, subject="Mathematics",
@@ -440,6 +516,7 @@ async def seed():
                 {"name": "Section C", "instructions": "Long answer (5 marks)", "marks": 5},
             ],
             created_by=teacher.id, status=PaperStatus.PUBLISHED,
+            workspace_id=ws1.id,
         )
         db.add(paper1)
         await db.flush()
@@ -448,7 +525,7 @@ async def seed():
             section = "Section A" if mq.marks <= 1 else ("Section B" if mq.marks <= 3 else "Section C")
             db.add(PaperQuestion(paper_id=paper1.id, question_id=mq.id, section=section, order=i+1))
 
-        # Paper 2: CBSE Class 10 Science Mid-term
+        # Paper 2: CBSE Class 10 Science Mid-term (Teacher2's workspace)
         paper2 = QuestionPaper(
             title="CBSE Class 10 Science - Mid-term Exam",
             board="CBSE", class_grade=10, subject="Science",
@@ -461,6 +538,7 @@ async def seed():
                 {"name": "Section C", "instructions": "Long answer (5 marks)", "marks": 34},
             ],
             created_by=teacher2.id, status=PaperStatus.PUBLISHED,
+            workspace_id=ws2.id,
         )
         db.add(paper2)
         await db.flush()
@@ -469,7 +547,7 @@ async def seed():
             section = "Section A" if sq.marks <= 1 else ("Section B" if sq.marks <= 3 else "Section C")
             db.add(PaperQuestion(paper_id=paper2.id, question_id=sq.id, section=section, order=i+1))
 
-        # Paper 3: CBSE Class 10 English Practice
+        # Paper 3: CBSE Class 10 English Practice (Teacher3's workspace)
         paper3 = QuestionPaper(
             title="CBSE Class 10 English - Practice Paper",
             board="CBSE", class_grade=10, subject="English",
@@ -477,6 +555,7 @@ async def seed():
             total_marks=80, duration_minutes=180,
             instructions="1. Attempt all questions.\n2. Write neat and legible answers.",
             created_by=teacher3.id, status=PaperStatus.PUBLISHED,
+            workspace_id=ws3.id,
         )
         db.add(paper3)
         await db.flush()
@@ -484,7 +563,7 @@ async def seed():
         for i, eq in enumerate(eng_qs):
             db.add(PaperQuestion(paper_id=paper3.id, question_id=eq.id, section="Section A", order=i+1))
 
-        # Paper 4: CBSE Class 10 Social Studies
+        # Paper 4: CBSE Class 10 Social Studies (Teacher3's workspace)
         paper4 = QuestionPaper(
             title="CBSE Class 10 Social Studies - Unit Test",
             board="CBSE", class_grade=10, subject="Social Studies",
@@ -492,6 +571,7 @@ async def seed():
             total_marks=40, duration_minutes=90,
             instructions="1. All questions compulsory.\n2. Support answers with examples.",
             created_by=teacher3.id, status=PaperStatus.PUBLISHED,
+            workspace_id=ws3.id,
         )
         db.add(paper4)
         await db.flush()
@@ -499,7 +579,7 @@ async def seed():
         for i, sq in enumerate(sst_qs):
             db.add(PaperQuestion(paper_id=paper4.id, question_id=sq.id, section="Section A", order=i+1))
 
-        # Paper 5: ICSE Class 10 Math
+        # Paper 5: ICSE Class 10 Math (Teacher1's workspace)
         paper5 = QuestionPaper(
             title="ICSE Class 10 Mathematics - Board Pattern",
             board="ICSE", class_grade=10, subject="Mathematics",
@@ -507,6 +587,7 @@ async def seed():
             total_marks=80, duration_minutes=150,
             instructions="1. Answer all questions from Section A.\n2. Answer any four from Section B.",
             created_by=teacher.id, status=PaperStatus.PUBLISHED,
+            workspace_id=ws1.id,
         )
         db.add(paper5)
         await db.flush()
@@ -514,21 +595,59 @@ async def seed():
         for i, iq in enumerate(icse_math_qs):
             db.add(PaperQuestion(paper_id=paper5.id, question_id=iq.id, section="Section A", order=i+1))
 
+        # ══════════════════════════════════════════
+        # EXAM ASSIGNMENTS
+        # ══════════════════════════════════════════
+
+        # Assign Paper1 (Math Unit Test) to Class 10-A as a formal exam
+        db.add(ExamAssignment(
+            paper_id=paper1.id,
+            class_id=class_10a.id,
+            assigned_by=teacher.id,
+            status="active",
+            start_at=None,  # available immediately
+            end_at=None,
+            is_practice=False,
+        ))
+
+        # Assign Paper5 (ICSE Math Board Pattern) to Class 10-A as practice
+        db.add(ExamAssignment(
+            paper_id=paper5.id,
+            class_id=class_10a.id,
+            assigned_by=teacher.id,
+            status="active",
+            start_at=None,
+            end_at=None,
+            is_practice=True,
+            label="Practice Set",
+        ))
+
         await db.commit()
 
         print("=" * 60)
         print("Database seeded successfully!")
         print("=" * 60)
         print()
+        print("Workspaces:")
+        print(f"  1. {ws1.name} (Teacher1, invite: {ws1.invite_code})")
+        print(f"  2. {ws2.name} (Teacher2, invite: {ws2.invite_code})")
+        print(f"  3. {ws3.name} (Teacher3, invite: {ws3.invite_code})")
+        print(f"  4. {ws4.name} (Student2 self-study)")
+        print()
+        print("Classes:")
+        print(f"  1. Class 10-A (workspace: {ws1.name}, teacher: Dr. Sharma)")
+        print(f"     - Student enrolled: Arjun Kumar")
+        print(f"     - Assignments: Paper1 (formal), Paper5 (practice)")
+        print()
         print("Question Banks:")
-        print(f"  1. CBSE Class 10 Mathematics   - {len(math_qs)} questions")
-        print(f"  2. CBSE Class 10 Science        - {len(sci_qs)} questions")
-        print(f"  3. CBSE Class 10 English        - {len(eng_qs)} questions")
-        print(f"  4. CBSE Class 10 Social Studies  - {len(sst_qs)} questions")
-        print(f"  5. ICSE Class 10 Mathematics    - {len(icse_math_qs)} questions")
-        print(f"  6. ICSE Class 10 English        - {len(icse_eng_qs)} questions")
-        print(f"  7. CBSE Class 9 Mathematics     - {len(math9_qs)} questions")
-        print(f"  8. CBSE Class 8 Science         - {len(sci8_qs)} questions")
+        print(f"  1. CBSE Class 10 Mathematics   - {len(math_qs)} questions (ws: {ws1.name})")
+        print(f"  2. CBSE Class 10 Science        - {len(sci_qs)} questions (ws: {ws2.name})")
+        print(f"  3. CBSE Class 10 English        - {len(eng_qs)} questions (ws: {ws3.name})")
+        print(f"  4. CBSE Class 10 Social Studies  - {len(sst_qs)} questions (ws: {ws3.name})")
+        print(f"  5. ICSE Class 10 Mathematics    - {len(icse_math_qs)} questions (ws: {ws1.name})")
+        print(f"  6. ICSE Class 10 English        - {len(icse_eng_qs)} questions (ws: {ws3.name})")
+        print(f"  7. CBSE Class 9 Mathematics     - {len(math9_qs)} questions (ws: {ws1.name})")
+        print(f"  8. CBSE Class 8 Science         - {len(sci8_qs)} questions (ws: {ws2.name})")
         print()
         print("Question Papers:")
         print("  1. CBSE Class 10 Math Unit Test (20 marks, 45 min)")

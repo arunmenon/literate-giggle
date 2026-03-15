@@ -33,6 +33,7 @@ class UserRegister(BaseModel):
     user: UserCreate
     student_profile: Optional[StudentProfileCreate] = None
     teacher_profile: Optional[TeacherProfileCreate] = None
+    invite_code: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
@@ -46,6 +47,10 @@ class TokenResponse(BaseModel):
     user_id: int
     role: str
     full_name: str
+    workspace_id: Optional[int] = None
+    workspace_role: Optional[str] = None
+    workspace_name: Optional[str] = None
+    workspace_type: Optional[str] = None
 
 
 class UserResponse(BaseModel):

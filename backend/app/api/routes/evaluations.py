@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ...core.database import get_db, async_session
-from ...models.user import User
+from ...models.user import User, UserRole, StudentProfile
 from ...models.exam import (
     ExamSession, ExamSessionStatus, StudentAnswer,
     PaperQuestion, Question, QuestionPaper,
@@ -25,7 +25,8 @@ from ...services.evaluation_engine import (
 )
 from ...services.ai_evaluator import evaluate_with_ai, generate_ai_recommendations
 from ...services.learning_plan_generator import update_topic_mastery
-from ..deps import get_current_user, require_teacher_or_admin
+from ...models.workspace import WorkspaceMember
+from ..deps import get_current_user, require_teacher_or_admin, get_current_workspace
 
 router = APIRouter(prefix="/evaluations", tags=["Evaluation (Assessment)"])
 
@@ -481,10 +482,36 @@ async def get_evaluation(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Get evaluation details."""
+    """Get evaluation details (ownership-checked)."""
     evaluation = await db.get(Evaluation, evaluation_id)
     if not evaluation:
         raise HTTPException(status_code=404, detail="Evaluation not found")
+
+    # IDOR check: verify the user owns this evaluation's session or is a teacher in the same workspace
+    session = await db.get(ExamSession, evaluation.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Evaluation not found")
+
+    # Check if user is the student who owns the session
+    student_result = await db.execute(
+        select(StudentProfile).where(
+            StudentProfile.user_id == user.id,
+            StudentProfile.id == session.student_id,
+        )
+    )
+    is_owner = student_result.scalar_one_or_none() is not None
+
+    # Check if user is a teacher in the same workspace as the paper
+    is_teacher_in_workspace = False
+    if not is_owner and user.role in (UserRole.TEACHER, UserRole.ADMIN):
+        paper = await db.get(QuestionPaper, session.paper_id)
+        if paper and paper.workspace_id:
+            ws_id = get_current_workspace(user)
+            if ws_id and ws_id == paper.workspace_id:
+                is_teacher_in_workspace = True
+
+    if not is_owner and not is_teacher_in_workspace:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     return await _build_evaluation_response(db, evaluation)
 

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ...core.database import get_db
-from ...models.user import User, StudentProfile
+from ...models.user import User, UserRole, StudentProfile
 from ...models.learning import (
     LearningPlan, LearningObjective, TopicMastery,
     ObjectiveStatus, MasteryLevel,
@@ -31,6 +31,19 @@ async def create_learning_plan(
     user: User = Depends(get_current_user),
 ):
     """Generate a personalized learning plan based on evaluation history."""
+    # IDOR check: validate student_id matches current user (or user is teacher)
+    if user.role == UserRole.STUDENT:
+        student_result = await db.execute(
+            select(StudentProfile).where(
+                StudentProfile.user_id == user.id,
+                StudentProfile.id == data.student_id,
+            )
+        )
+        if not student_result.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif user.role not in (UserRole.TEACHER, UserRole.ADMIN):
+        raise HTTPException(status_code=403, detail="Access denied")
+
     plan = await generate_learning_plan(
         db=db,
         student_id=data.student_id,
@@ -74,7 +87,7 @@ async def get_learning_plan(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Get a learning plan with objectives."""
+    """Get a learning plan with objectives (ownership-checked)."""
     result = await db.execute(
         select(LearningPlan)
         .options(selectinload(LearningPlan.objectives))
@@ -83,6 +96,18 @@ async def get_learning_plan(
     plan = result.scalar_one_or_none()
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
+
+    # IDOR check: plan must belong to current student (or user is teacher)
+    if user.role == UserRole.STUDENT:
+        student_result = await db.execute(
+            select(StudentProfile).where(
+                StudentProfile.user_id == user.id,
+                StudentProfile.id == plan.student_id,
+            )
+        )
+        if not student_result.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Access denied")
+
     return _plan_to_response(plan)
 
 
@@ -93,10 +118,23 @@ async def update_objective(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Update a learning objective's status and progress."""
+    """Update a learning objective's status and progress (ownership-checked)."""
     objective = await db.get(LearningObjective, objective_id)
     if not objective:
         raise HTTPException(status_code=404, detail="Objective not found")
+
+    # IDOR check: objective's plan must belong to current student
+    if user.role == UserRole.STUDENT:
+        plan = await db.get(LearningPlan, objective.plan_id)
+        if plan:
+            student_result = await db.execute(
+                select(StudentProfile).where(
+                    StudentProfile.user_id == user.id,
+                    StudentProfile.id == plan.student_id,
+                )
+            )
+            if not student_result.scalar_one_or_none():
+                raise HTTPException(status_code=403, detail="Access denied")
 
     objective.status = ObjectiveStatus(data.status)
     objective.attempts += 1

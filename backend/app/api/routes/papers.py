@@ -2,7 +2,8 @@
 
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from fastapi.responses import StreamingResponse
+from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import Optional
@@ -15,7 +16,7 @@ from ...schemas.exam import (
     PaperQuestionAdd, PaperStatusUpdate,
     PaperAssemblyRequest, PaperAssemblyResult,
 )
-from ..deps import get_current_user, require_teacher_or_admin
+from ..deps import get_current_user, require_teacher_or_admin, get_current_workspace
 
 router = APIRouter(prefix="/papers", tags=["Question Papers (Curation)"])
 
@@ -26,7 +27,7 @@ async def create_paper(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_teacher_or_admin),
 ):
-    """Create a new question paper with questions."""
+    """Create a new question paper with questions. Auto-sets workspace_id from JWT."""
     paper = QuestionPaper(
         title=data.title,
         board=data.board,
@@ -40,6 +41,7 @@ async def create_paper(
         sections=data.sections,
         created_by=user.id,
         status=PaperStatus.DRAFT,
+        workspace_id=get_current_workspace(user),
     )
     db.add(paper)
     await db.flush()
@@ -96,8 +98,23 @@ async def list_papers(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """List question papers with filters."""
+    """List question papers with filters, scoped to workspace."""
+    ws_id = get_current_workspace(user)
     query = select(QuestionPaper)
+
+    # Workspace scoping
+    if ws_id:
+        query = query.where(
+            or_(
+                QuestionPaper.workspace_id == ws_id,
+                and_(
+                    QuestionPaper.workspace_id.is_(None),
+                    QuestionPaper.created_by == user.id,
+                ),
+            )
+        )
+    else:
+        query = query.where(QuestionPaper.created_by == user.id)
 
     if board:
         query = query.where(QuestionPaper.board == board)
@@ -318,3 +335,58 @@ async def add_question_to_paper(
     db.add(pq)
     await db.flush()
     return {"id": pq.id, "message": "Question added to paper"}
+
+
+@router.get("/{paper_id}/export/pdf")
+async def export_paper_pdf(
+    paper_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Export a paper as PDF. Returns StreamingResponse with application/pdf."""
+    from ...services.pdf_export import generate_paper_pdf
+    from ...models.workspace import Workspace
+
+    result = await db.execute(
+        select(QuestionPaper)
+        .options(selectinload(QuestionPaper.paper_questions).selectinload(PaperQuestion.question))
+        .where(QuestionPaper.id == paper_id)
+    )
+    paper = result.scalar_one_or_none()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    # Get workspace name for header
+    workspace_name = None
+    if paper.workspace_id:
+        ws_result = await db.execute(
+            select(Workspace).where(Workspace.id == paper.workspace_id)
+        )
+        ws = ws_result.scalar_one_or_none()
+        if ws:
+            workspace_name = ws.name
+
+    questions = []
+    for pq in sorted(paper.paper_questions, key=lambda x: x.order):
+        q = pq.question
+        questions.append({
+            "order": pq.order,
+            "section": pq.section,
+            "marks": pq.marks_override or q.marks,
+            "question_type": q.question_type.value,
+            "question_text": q.question_text,
+            "mcq_options": q.mcq_options,
+            "is_compulsory": pq.is_compulsory,
+            "choice_group": pq.choice_group,
+        })
+
+    pdf_bytes = generate_paper_pdf(paper, questions, workspace_name=workspace_name)
+
+    import io
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{paper.title}.pdf"',
+        },
+    )
