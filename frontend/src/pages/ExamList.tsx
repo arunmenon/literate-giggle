@@ -14,6 +14,7 @@ import {
   Skeleton,
   Input,
   StatCard,
+  useToast,
 } from "../components/ui";
 import { cn } from "../lib/utils";
 import {
@@ -89,6 +90,7 @@ const ExamList: React.FC = () => {
   const [myExams, setMyExams] = useState<ExamSession[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { toast, ToastContainer } = useToast();
 
   // Upcoming exams from assigned classes (from exam list API)
   const [assignedExams, setAssignedExams] = useState<any[]>([]);
@@ -120,7 +122,7 @@ const ExamList: React.FC = () => {
       });
       navigate(`/exam/${data.id}`);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Failed to start exam");
+      toast(err.response?.data?.detail || "Failed to start exam", "error");
     }
   };
 
@@ -196,6 +198,7 @@ const ExamList: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <ToastContainer />
       {/* Page Header */}
       <div>
         <h2 className="text-2xl font-bold font-display tracking-tight">

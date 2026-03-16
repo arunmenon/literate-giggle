@@ -2,9 +2,27 @@ import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { authAPI } from "../services/api";
 import { useAuth } from "../store/AuthContext";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+  Input,
+  Button,
+  Select,
+} from "../components/ui";
 
-const BOARDS = ["CBSE", "ICSE", "State Board"];
-const CLASSES = [7, 8, 9, 10, 11, 12];
+const BOARDS = [
+  { value: "CBSE", label: "CBSE" },
+  { value: "ICSE", label: "ICSE" },
+  { value: "State Board", label: "State Board" },
+];
+const CLASSES = [7, 8, 9, 10, 11, 12].map((c) => ({
+  value: String(c),
+  label: `Class ${c}`,
+}));
 
 const Register: React.FC = () => {
   const [form, setForm] = useState({
@@ -49,7 +67,7 @@ const Register: React.FC = () => {
         payload.teacher_profile = {
           board: form.board,
           subjects: form.subjects.split(",").map((s: string) => s.trim()),
-          classes: CLASSES,
+          classes: [7, 8, 9, 10, 11, 12],
           institution: form.institution || undefined,
         };
       }
@@ -64,171 +82,183 @@ const Register: React.FC = () => {
   };
 
   return (
-    <div style={containerStyle}>
-      <div style={cardStyle}>
-        <h1 style={{ textAlign: "center", color: "#2c3e50", marginBottom: 8 }}>
-          Join ExamIQ
-        </h1>
-        <p style={{ textAlign: "center", color: "#7f8c8d", marginBottom: 24, fontSize: 14 }}>
-          Create your account
-        </p>
-        {error && <div style={errorStyle}>{error}</div>}
-        <form onSubmit={handleSubmit}>
-          <div style={fieldStyle}>
-            <label>Full Name</label>
-            <input
-              value={form.full_name}
-              onChange={(e) => update("full_name", e.target.value)}
-              required
-              style={inputStyle}
-            />
-          </div>
-          <div style={fieldStyle}>
-            <label>Email</label>
-            <input
-              type="email"
-              value={form.email}
-              onChange={(e) => update("email", e.target.value)}
-              required
-              style={inputStyle}
-            />
-          </div>
-          <div style={fieldStyle}>
-            <label>Password</label>
-            <input
-              type="password"
-              value={form.password}
-              onChange={(e) => update("password", e.target.value)}
-              required
-              minLength={6}
-              style={inputStyle}
-            />
-          </div>
-          <div style={fieldStyle}>
-            <label>Role</label>
-            <select
-              value={form.role}
-              onChange={(e) => update("role", e.target.value)}
-              style={inputStyle}
-            >
-              <option value="student">Student</option>
-              <option value="teacher">Teacher</option>
-            </select>
-          </div>
-          <div style={fieldStyle}>
-            <label>Board</label>
-            <select
-              value={form.board}
-              onChange={(e) => update("board", e.target.value)}
-              style={inputStyle}
-            >
-              {BOARDS.map((b) => (
-                <option key={b} value={b}>{b}</option>
-              ))}
-            </select>
-          </div>
-          {form.role === "student" && (
-            <>
-              <div style={fieldStyle}>
-                <label>Class</label>
-                <select
-                  value={form.class_grade}
-                  onChange={(e) => update("class_grade", Number(e.target.value))}
-                  style={inputStyle}
-                >
-                  {CLASSES.map((c) => (
-                    <option key={c} value={c}>Class {c}</option>
-                  ))}
-                </select>
-              </div>
-              <div style={fieldStyle}>
-                <label>School Name (optional)</label>
-                <input
-                  value={form.school_name}
-                  onChange={(e) => update("school_name", e.target.value)}
-                  style={inputStyle}
-                />
-              </div>
-            </>
+    <div className="flex min-h-[80vh] items-center justify-center px-4 py-8">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl font-bold tracking-tight">
+            Join ExamIQ
+          </CardTitle>
+          <CardDescription>Create your account</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
           )}
-          {form.role === "teacher" && (
-            <>
-              <div style={fieldStyle}>
-                <label>Subjects (comma-separated)</label>
-                <input
-                  value={form.subjects}
-                  onChange={(e) => update("subjects", e.target.value)}
-                  style={inputStyle}
-                  placeholder="Mathematics, Science"
-                />
-              </div>
-              <div style={fieldStyle}>
-                <label>Institution (optional)</label>
-                <input
-                  value={form.institution}
-                  onChange={(e) => update("institution", e.target.value)}
-                  style={inputStyle}
-                />
-              </div>
-            </>
-          )}
-          <button type="submit" disabled={loading} style={btnStyle}>
-            {loading ? "Creating account..." : "Create Account"}
-          </button>
-        </form>
-        <p style={{ textAlign: "center", marginTop: 16, fontSize: 14 }}>
-          Already have an account?{" "}
-          <Link to="/login" style={{ color: "#3498db" }}>Sign In</Link>
-        </p>
-      </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <label
+                htmlFor="full_name"
+                className="text-sm font-medium text-foreground"
+              >
+                Full Name
+              </label>
+              <Input
+                id="full_name"
+                value={form.full_name}
+                onChange={(e) => update("full_name", e.target.value)}
+                required
+                autoComplete="name"
+              />
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="reg_email"
+                className="text-sm font-medium text-foreground"
+              >
+                Email
+              </label>
+              <Input
+                id="reg_email"
+                type="email"
+                value={form.email}
+                onChange={(e) => update("email", e.target.value)}
+                required
+                autoComplete="email"
+              />
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="reg_password"
+                className="text-sm font-medium text-foreground"
+              >
+                Password
+              </label>
+              <Input
+                id="reg_password"
+                type="password"
+                value={form.password}
+                onChange={(e) => update("password", e.target.value)}
+                required
+                minLength={6}
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="role"
+                className="text-sm font-medium text-foreground"
+              >
+                Role
+              </label>
+              <Select
+                id="role"
+                options={[
+                  { value: "student", label: "Student" },
+                  { value: "teacher", label: "Teacher" },
+                ]}
+                value={form.role}
+                onChange={(e) => update("role", e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="board"
+                className="text-sm font-medium text-foreground"
+              >
+                Board
+              </label>
+              <Select
+                id="board"
+                options={BOARDS}
+                value={form.board}
+                onChange={(e) => update("board", e.target.value)}
+              />
+            </div>
+            {form.role === "student" && (
+              <>
+                <div className="space-y-2">
+                  <label
+                    htmlFor="class_grade"
+                    className="text-sm font-medium text-foreground"
+                  >
+                    Class
+                  </label>
+                  <Select
+                    id="class_grade"
+                    options={CLASSES}
+                    value={String(form.class_grade)}
+                    onChange={(e) =>
+                      update("class_grade", Number(e.target.value))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label
+                    htmlFor="school_name"
+                    className="text-sm font-medium text-foreground"
+                  >
+                    School Name (optional)
+                  </label>
+                  <Input
+                    id="school_name"
+                    value={form.school_name}
+                    onChange={(e) => update("school_name", e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+            {form.role === "teacher" && (
+              <>
+                <div className="space-y-2">
+                  <label
+                    htmlFor="subjects"
+                    className="text-sm font-medium text-foreground"
+                  >
+                    Subjects (comma-separated)
+                  </label>
+                  <Input
+                    id="subjects"
+                    value={form.subjects}
+                    onChange={(e) => update("subjects", e.target.value)}
+                    placeholder="Mathematics, Science"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label
+                    htmlFor="institution"
+                    className="text-sm font-medium text-foreground"
+                  >
+                    Institution (optional)
+                  </label>
+                  <Input
+                    id="institution"
+                    value={form.institution}
+                    onChange={(e) => update("institution", e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? "Creating account..." : "Create Account"}
+            </Button>
+          </form>
+        </CardContent>
+        <CardFooter className="justify-center">
+          <p className="text-sm text-muted-foreground">
+            Already have an account?{" "}
+            <Link
+              to="/login"
+              className="font-medium text-primary hover:underline"
+            >
+              Sign In
+            </Link>
+          </p>
+        </CardFooter>
+      </Card>
     </div>
   );
-};
-
-const containerStyle: React.CSSProperties = {
-  minHeight: "100vh",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-};
-const cardStyle: React.CSSProperties = {
-  background: "white",
-  padding: 40,
-  borderRadius: 12,
-  width: 440,
-  boxShadow: "0 20px 40px rgba(0,0,0,0.15)",
-  maxHeight: "90vh",
-  overflowY: "auto",
-};
-const fieldStyle: React.CSSProperties = { marginBottom: 12 };
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  border: "1px solid #ddd",
-  borderRadius: 6,
-  fontSize: 14,
-  marginTop: 4,
-  boxSizing: "border-box",
-};
-const btnStyle: React.CSSProperties = {
-  width: "100%",
-  padding: 12,
-  background: "#3498db",
-  color: "white",
-  border: "none",
-  borderRadius: 6,
-  fontSize: 16,
-  cursor: "pointer",
-  marginTop: 8,
-};
-const errorStyle: React.CSSProperties = {
-  background: "#fee",
-  color: "#c0392b",
-  padding: 10,
-  borderRadius: 6,
-  marginBottom: 16,
-  fontSize: 14,
 };
 
 export default Register;

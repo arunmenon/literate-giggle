@@ -71,33 +71,39 @@ async def list_classes(
     if user.role == UserRole.TEACHER and ws_role not in ("owner", "admin"):
         query = query.where(ClassGroup.teacher_id == user.id)
 
-    result = await db.execute(query.order_by(ClassGroup.created_at.desc()))
-    classes = result.scalars().all()
+    # Single aggregated query: join classes with enrollment counts to avoid N+1
+    count_subq = (
+        select(
+            Enrollment.class_id,
+            func.count(Enrollment.id).label("student_count"),
+        )
+        .where(Enrollment.is_active == True)
+        .group_by(Enrollment.class_id)
+        .subquery()
+    )
+    combined = (
+        query.outerjoin(count_subq, ClassGroup.id == count_subq.c.class_id)
+        .add_columns(func.coalesce(count_subq.c.student_count, 0).label("student_count"))
+        .order_by(ClassGroup.created_at.desc())
+    )
+    result = await db.execute(combined)
+    rows = result.all()
 
-    responses = []
-    for cls in classes:
-        count_result = await db.execute(
-            select(func.count(Enrollment.id)).where(
-                Enrollment.class_id == cls.id,
-                Enrollment.is_active == True,
-            )
+    return [
+        ClassGroupResponse(
+            id=cls.id,
+            workspace_id=cls.workspace_id,
+            name=cls.name,
+            grade=cls.grade,
+            section=cls.section,
+            subject=cls.subject,
+            academic_year=cls.academic_year,
+            teacher_id=cls.teacher_id,
+            student_count=count,
+            created_at=cls.created_at,
         )
-        count = count_result.scalar()
-        responses.append(
-            ClassGroupResponse(
-                id=cls.id,
-                workspace_id=cls.workspace_id,
-                name=cls.name,
-                grade=cls.grade,
-                section=cls.section,
-                subject=cls.subject,
-                academic_year=cls.academic_year,
-                teacher_id=cls.teacher_id,
-                student_count=count,
-                created_at=cls.created_at,
-            )
-        )
-    return responses
+        for cls, count in rows
+    ]
 
 
 @router.get("/{class_id}/students", response_model=list[EnrollmentResponse])

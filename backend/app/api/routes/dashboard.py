@@ -230,26 +230,31 @@ async def teacher_stats(
     )
     pending_reviews = (await db.execute(pending_query)).scalar()
 
-    # Classes with student count and avg score
+    # Classes with student count -- single grouped query to avoid N+1
     classes_data = []
     if ws_id:
+        enrollment_counts = (
+            select(
+                Enrollment.class_id,
+                func.count(Enrollment.id).label("student_count"),
+            )
+            .where(Enrollment.is_active == True)
+            .group_by(Enrollment.class_id)
+            .subquery()
+        )
         classes_result = await db.execute(
-            select(ClassGroup).where(
+            select(
+                ClassGroup,
+                func.coalesce(enrollment_counts.c.student_count, 0).label("student_count"),
+            )
+            .outerjoin(enrollment_counts, ClassGroup.id == enrollment_counts.c.class_id)
+            .where(
                 ClassGroup.workspace_id == ws_id,
                 ClassGroup.teacher_id == user.id,
             )
         )
-        teacher_classes = classes_result.scalars().all()
 
-        for cls in teacher_classes:
-            student_count_result = await db.execute(
-                select(func.count(Enrollment.id)).where(
-                    Enrollment.class_id == cls.id,
-                    Enrollment.is_active == True,
-                )
-            )
-            student_count = student_count_result.scalar()
-
+        for cls, student_count in classes_result.all():
             classes_data.append({
                 "id": cls.id,
                 "name": cls.name,

@@ -54,7 +54,7 @@ async def start_exam(
         )
     )
     assignment_result = await db.execute(assignment_query)
-    assignment = assignment_result.scalar_one_or_none()
+    assignment = assignment_result.scalars().first()
     if not assignment:
         raise HTTPException(status_code=403, detail="This exam is not assigned to your class")
 

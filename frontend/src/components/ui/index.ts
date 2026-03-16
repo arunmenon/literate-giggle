@@ -38,3 +38,20 @@ export type { MasteryBadgeProps } from "./MasteryBadge";
 
 export { DataCard } from "./DataCard";
 export type { DataCardProps } from "./DataCard";
+
+export {
+  Dialog,
+  DialogPortal,
+  DialogOverlay,
+  DialogClose,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+  useConfirmDialog,
+} from "./Dialog";
+
+export { useToast } from "./Toast";
+export type { ToastType, ToastItem } from "./Toast";

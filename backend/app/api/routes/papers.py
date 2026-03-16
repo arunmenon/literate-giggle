@@ -127,38 +127,45 @@ async def list_papers(
     if exam_type:
         query = query.where(QuestionPaper.exam_type == exam_type)
 
-    query = query.order_by(QuestionPaper.created_at.desc()).offset(offset).limit(limit)
-    result = await db.execute(query)
-    papers = result.scalars().all()
+    # Single aggregated query: join papers with question counts to avoid N+1
+    count_subq = (
+        select(
+            PaperQuestion.paper_id,
+            func.count(PaperQuestion.id).label("question_count"),
+        )
+        .group_by(PaperQuestion.paper_id)
+        .subquery()
+    )
+    combined = (
+        query.outerjoin(count_subq, QuestionPaper.id == count_subq.c.paper_id)
+        .add_columns(func.coalesce(count_subq.c.question_count, 0).label("question_count"))
+        .order_by(QuestionPaper.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    result = await db.execute(combined)
+    rows = result.all()
 
-    responses = []
-    for paper in papers:
-        count_result = await db.execute(
-            select(func.count(PaperQuestion.id)).where(
-                PaperQuestion.paper_id == paper.id
-            )
+    return [
+        QuestionPaperResponse(
+            id=paper.id,
+            title=paper.title,
+            board=paper.board,
+            class_grade=paper.class_grade,
+            subject=paper.subject,
+            exam_type=paper.exam_type,
+            total_marks=paper.total_marks,
+            duration_minutes=paper.duration_minutes,
+            status=paper.status.value,
+            sections=paper.sections,
+            question_count=count,
+            created_at=paper.created_at,
+            published_at=paper.published_at,
+            starts_at=paper.starts_at,
+            ends_at=paper.ends_at,
         )
-        count = count_result.scalar()
-        responses.append(
-            QuestionPaperResponse(
-                id=paper.id,
-                title=paper.title,
-                board=paper.board,
-                class_grade=paper.class_grade,
-                subject=paper.subject,
-                exam_type=paper.exam_type,
-                total_marks=paper.total_marks,
-                duration_minutes=paper.duration_minutes,
-                status=paper.status.value,
-                sections=paper.sections,
-                question_count=count,
-                created_at=paper.created_at,
-                published_at=paper.published_at,
-                starts_at=paper.starts_at,
-                ends_at=paper.ends_at,
-            )
-        )
-    return responses
+        for paper, count in rows
+    ]
 
 
 @router.get("/{paper_id}", response_model=QuestionPaperDetail)
@@ -303,6 +310,97 @@ async def assemble_paper_endpoint(
     )
 
     return PaperAssemblyResult(**result)
+
+
+@router.get("/{paper_id}/coverage")
+async def get_paper_coverage(
+    paper_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_teacher_or_admin),
+):
+    """Compute target-vs-actual coverage for an existing paper. Workspace-scoped."""
+    from ...services.paper_assembler import (
+        _build_coverage_analysis, _rag_status,
+    )
+    from ...services.curriculum_registry import CurriculumRegistry
+    from ...models.curriculum import (
+        Board, Curriculum, CurriculumSubject, CurriculumChapter,
+    )
+
+    result = await db.execute(
+        select(QuestionPaper)
+        .options(selectinload(QuestionPaper.paper_questions).selectinload(PaperQuestion.question))
+        .where(QuestionPaper.id == paper_id)
+    )
+    paper = result.scalar_one_or_none()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    # Workspace scoping
+    ws_id = get_current_workspace(user)
+    if ws_id and paper.workspace_id and paper.workspace_id != ws_id:
+        raise HTTPException(status_code=403, detail="Paper not in your workspace")
+
+    # Build question dicts for the coverage analysis function
+    questions = []
+    chapter_names = set()
+    for pq in paper.paper_questions:
+        q = pq.question
+        blooms = q.blooms_level.value if q.blooms_level else "understand"
+        difficulty = q.difficulty.value if q.difficulty else "medium"
+        topic = q.topic or "Unknown"
+
+        # Resolve chapter name from chapter_id FK if available
+        chapter_name = topic
+        if q.chapter_id:
+            chapter = await db.get(CurriculumChapter, q.chapter_id)
+            if chapter:
+                chapter_name = chapter.name
+
+        chapter_names.add(chapter_name)
+        questions.append({
+            "topic": chapter_name,
+            "blooms_level": blooms,
+            "difficulty": difficulty,
+            "marks": pq.marks_override or q.marks,
+        })
+
+    # Try to get chapter weightages from curriculum
+    chapter_weightages = None
+    subject_query = (
+        select(CurriculumSubject)
+        .join(Curriculum, CurriculumSubject.curriculum_id == Curriculum.id)
+        .join(Board, Curriculum.board_id == Board.id)
+        .where(
+            Board.code == paper.board,
+            CurriculumSubject.name == paper.subject,
+        )
+    )
+    subj_result = await db.execute(subject_query)
+    curriculum_subject = subj_result.scalar_one_or_none()
+    if curriculum_subject:
+        ch_result = await db.execute(
+            select(CurriculumChapter)
+            .where(CurriculumChapter.subject_id == curriculum_subject.id)
+        )
+        db_chapters = ch_result.scalars().all()
+        if db_chapters:
+            chapter_weightages = {}
+            for ch in db_chapters:
+                if ch.marks_weightage:
+                    chapter_weightages[ch.name] = ch.marks_weightage
+                # Also add chapters from DB to list
+                chapter_names.add(ch.name)
+            if not chapter_weightages:
+                chapter_weightages = None
+
+    coverage = _build_coverage_analysis(
+        questions, list(chapter_names),
+        board=paper.board, total_marks=paper.total_marks,
+        chapter_weightages=chapter_weightages,
+    )
+
+    return coverage
 
 
 @router.post("/{paper_id}/questions", status_code=201)

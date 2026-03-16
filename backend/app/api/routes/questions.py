@@ -21,6 +21,8 @@ from ...schemas.exam import (
     ResearchRequest, ResearchResult,
     RegenerateRequest,
 )
+from ...schemas.taxonomy import BankAnalyticsResponse
+from ...services.taxonomy_service import get_bank_analytics, fuzzy_match_topic_to_chapter
 from ...services.question_generator import generate_questions, generate_bulk_questions
 from ...services.curriculum_registry import CurriculumRegistry
 from ..deps import get_current_user, require_teacher_or_admin, get_current_workspace
@@ -93,28 +95,64 @@ async def list_question_banks(
     if subject:
         query = query.where(QuestionBank.subject == subject)
 
-    result = await db.execute(query.order_by(QuestionBank.created_at.desc()))
-    banks = result.scalars().all()
+    # Single aggregated query: join banks with question counts to avoid N+1
+    count_subq = (
+        select(
+            Question.bank_id,
+            func.count(Question.id).label("question_count"),
+        )
+        .where(Question.is_active == True)
+        .group_by(Question.bank_id)
+        .subquery()
+    )
+    combined = (
+        query.outerjoin(count_subq, QuestionBank.id == count_subq.c.bank_id)
+        .add_columns(func.coalesce(count_subq.c.question_count, 0).label("question_count"))
+        .order_by(QuestionBank.created_at.desc())
+    )
+    result = await db.execute(combined)
+    rows = result.all()
 
-    responses = []
-    for bank in banks:
-        count_result = await db.execute(
-            select(func.count(Question.id)).where(Question.bank_id == bank.id)
+    return [
+        QuestionBankResponse(
+            id=bank.id,
+            name=bank.name,
+            board=bank.board,
+            class_grade=bank.class_grade,
+            subject=bank.subject,
+            chapter=bank.chapter,
+            question_count=count,
+            created_at=bank.created_at,
         )
-        count = count_result.scalar()
-        responses.append(
-            QuestionBankResponse(
-                id=bank.id,
-                name=bank.name,
-                board=bank.board,
-                class_grade=bank.class_grade,
-                subject=bank.subject,
-                chapter=bank.chapter,
-                question_count=count,
-                created_at=bank.created_at,
-            )
-        )
-    return responses
+        for bank, count in rows
+    ]
+
+
+# ── Bank Analytics ──
+
+
+@router.get("/banks/{bank_id}/analytics", response_model=BankAnalyticsResponse)
+async def get_bank_analytics_endpoint(
+    bank_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_teacher_or_admin),
+):
+    """Get coverage analytics for a question bank against its curriculum."""
+    # Workspace-scoped: verify bank belongs to user's workspace
+    bank = await db.get(QuestionBank, bank_id)
+    if not bank:
+        raise HTTPException(status_code=404, detail="Question bank not found")
+
+    ws_id = get_current_workspace(user)
+    if bank.workspace_id is not None:
+        if ws_id != bank.workspace_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    else:
+        if bank.created_by != user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    analytics = await get_bank_analytics(db, bank_id)
+    return analytics
 
 
 # ── Curriculum ──
@@ -156,6 +194,15 @@ async def create_question(
         raise HTTPException(status_code=404, detail="Question bank not found")
 
     question = Question(**data.model_dump())
+
+    # Auto-set chapter_id via fuzzy match if not provided
+    if not question.chapter_id and question.topic and bank:
+        matched_id = await fuzzy_match_topic_to_chapter(
+            question.topic, bank.board, bank.class_grade, bank.subject, db
+        )
+        if matched_id:
+            question.chapter_id = matched_id
+
     db.add(question)
     await db.flush()
     return question
@@ -341,8 +388,19 @@ async def approve_generated_questions(
         q_dict.setdefault("teacher_edited", False)
         q_dict.setdefault("quality_rating", None)
         q_dict.setdefault("generation_context", None)
+        # Extract chapter_id before creating Question (if present from generation)
+        chapter_id = q_dict.pop("chapter_id", None)
         question = Question(**q_dict)
         question.bank_id = data.bank_id
+        # Set chapter_id from generation payload or attempt fuzzy match
+        if chapter_id:
+            question.chapter_id = chapter_id
+        elif question.topic and bank:
+            matched_id = await fuzzy_match_topic_to_chapter(
+                question.topic, bank.board, bank.class_grade, bank.subject, db
+            )
+            if matched_id:
+                question.chapter_id = matched_id
         db.add(question)
         await db.flush()
         saved_questions.append(question)

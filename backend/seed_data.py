@@ -622,6 +622,34 @@ async def seed():
             label="Practice Set",
         ))
 
+        # ══════════════════════════════════════════
+        # LINK QUESTIONS TO CURRICULUM CHAPTERS (FK)
+        # ══════════════════════════════════════════
+        from app.services.taxonomy_service import fuzzy_match_topic_to_chapter
+
+        linked = 0
+        total_qs = 0
+        all_bank_questions = [
+            (math_bank, math_qs), (sci_bank, sci_qs),
+            (eng_bank, eng_qs), (sst_bank, sst_qs),
+            (icse_math_bank, icse_math_qs), (icse_eng_bank, icse_eng_qs),
+            (math9_bank, math9_qs), (sci8_bank, sci8_qs),
+        ]
+        for bank, qs in all_bank_questions:
+            for question in qs:
+                total_qs += 1
+                if question.topic:
+                    chapter_id = await fuzzy_match_topic_to_chapter(
+                        question.topic, bank.board, bank.class_grade, bank.subject, db
+                    )
+                    if chapter_id:
+                        question.chapter_id = chapter_id
+                        linked += 1
+
+        await db.flush()
+        link_pct = (linked / total_qs * 100) if total_qs > 0 else 0
+        print(f"\nChapter linking: {linked}/{total_qs} questions linked ({link_pct:.0f}%)")
+
         await db.commit()
 
         print("=" * 60)

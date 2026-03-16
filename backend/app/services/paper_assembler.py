@@ -16,6 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models.exam import (
     Question, QuestionBank, QuestionType, DifficultyLevel, BloomsTaxonomy,
 )
+from ..models.curriculum import (
+    Board, Curriculum, CurriculumSubject, CurriculumChapter,
+)
 from .question_generator import generate_questions
 from .curriculum_registry import CurriculumRegistry
 from .syllabus_researcher import research_chapter
@@ -23,6 +26,38 @@ from .syllabus_researcher import research_chapter
 logger = logging.getLogger(__name__)
 
 _registry = CurriculumRegistry()
+
+
+async def _get_chapter_weightages(
+    db: AsyncSession,
+    board: str,
+    class_grade: int,
+    subject: str,
+) -> Optional[dict[str, int]]:
+    """Query chapter marks_weightage from curriculum tables."""
+    try:
+        result = await db.execute(
+            select(CurriculumChapter.name, CurriculumChapter.marks_weightage)
+            .join(CurriculumSubject, CurriculumChapter.subject_id == CurriculumSubject.id)
+            .join(Curriculum, CurriculumSubject.curriculum_id == Curriculum.id)
+            .join(Board, Curriculum.board_id == Board.id)
+            .where(
+                Board.code == board,
+                CurriculumSubject.class_grade == class_grade,
+                CurriculumSubject.name == subject,
+                Curriculum.is_active == True,
+            )
+        )
+        rows = result.all()
+        if not rows:
+            return None
+        weightages = {}
+        for name, weightage in rows:
+            if weightage:
+                weightages[name] = weightage
+        return weightages if weightages else None
+    except Exception:
+        return None
 
 
 async def assemble_paper(
@@ -202,8 +237,15 @@ async def assemble_paper(
         sq["order"] = order
         order += 1
 
-    # 6. Build coverage analysis
-    coverage = _build_coverage_analysis(selected_questions, chapters)
+    # 6. Build coverage analysis (with targets)
+    # Query chapter weightages from DB curriculum tables
+    chapter_weightages = await _get_chapter_weightages(db, board, class_grade, subject)
+
+    coverage = _build_coverage_analysis(
+        selected_questions, chapters,
+        board=board, total_marks=total_marks,
+        chapter_weightages=chapter_weightages,
+    )
 
     # Build paper metadata
     paper_title = title or f"{board} Class {class_grade} {subject} - {exam_type or 'Exam'}"
@@ -270,8 +312,11 @@ def _find_section_with_room(
 def _build_coverage_analysis(
     questions: list[dict],
     chapters: list[str],
+    board: str = "",
+    total_marks: float = 0,
+    chapter_weightages: Optional[dict[str, int]] = None,
 ) -> dict:
-    """Build coverage analysis for the assembled paper."""
+    """Build coverage analysis for the assembled paper, including targets."""
     topic_counts: dict[str, int] = defaultdict(int)
     blooms_counts: dict[str, int] = defaultdict(int)
     difficulty_counts: dict[str, int] = defaultdict(int)
@@ -296,12 +341,129 @@ def _build_coverage_analysis(
         for topic, count in topic_counts.items()
     }
 
+    # Compute chapter targets from weightages
+    chapter_targets = _compute_chapter_targets(
+        chapters, chapter_counts, chapter_weightages, total,
+    )
+
+    # Compute Bloom's targets based on board
+    blooms_targets = _compute_blooms_targets(board, blooms_counts, total)
+
     return {
         "topic_coverage": topic_coverage,
         "blooms_distribution": dict(blooms_counts),
         "difficulty_distribution": dict(difficulty_counts),
         "chapter_distribution": dict(chapter_counts),
+        "chapter_targets": chapter_targets,
+        "blooms_targets": blooms_targets,
     }
+
+
+def _compute_chapter_targets(
+    chapters: list[str],
+    chapter_counts: dict[str, int],
+    chapter_weightages: Optional[dict[str, int]],
+    total_questions: int,
+) -> list[dict]:
+    """Compute target vs actual question counts per chapter."""
+    if not chapter_weightages:
+        # Equal distribution when no weightage data
+        target_per_chapter = max(1, total_questions // max(len(chapters), 1))
+        return [
+            {
+                "chapter_name": ch,
+                "actual": chapter_counts.get(ch, 0),
+                "target": target_per_chapter,
+                "status": _rag_status(chapter_counts.get(ch, 0), target_per_chapter),
+            }
+            for ch in chapters
+        ]
+
+    total_weightage = sum(chapter_weightages.values()) or 1
+    result = []
+    for ch in chapters:
+        weightage = chapter_weightages.get(ch, 0)
+        target = max(1, round(total_questions * weightage / total_weightage)) if weightage > 0 else 0
+        actual = chapter_counts.get(ch, 0)
+        result.append({
+            "chapter_name": ch,
+            "actual": actual,
+            "target": target,
+            "status": _rag_status(actual, target),
+        })
+    return result
+
+
+def _compute_blooms_targets(
+    board: str,
+    blooms_counts: dict[str, int],
+    total_questions: int,
+) -> list[dict]:
+    """
+    Compute Bloom's taxonomy target distribution based on board.
+
+    CBSE: 50% Apply/Analyze/Evaluate, 30% Understand/Apply, 20% Remember
+    ICSE: 40% Apply/Analyze, 40% Understand, 20% Remember
+    Default: equal split across levels present
+    """
+    if board.upper() == "CBSE":
+        level_targets = {
+            "remember": 0.20,
+            "understand": 0.15,
+            "apply": 0.25,
+            "analyze": 0.20,
+            "evaluate": 0.10,
+            "create": 0.10,
+        }
+    elif board.upper() == "ICSE":
+        level_targets = {
+            "remember": 0.20,
+            "understand": 0.40,
+            "apply": 0.20,
+            "analyze": 0.20,
+            "evaluate": 0.00,
+            "create": 0.00,
+        }
+    else:
+        # Equal distribution across standard Bloom's levels
+        level_targets = {
+            "remember": 1 / 6,
+            "understand": 1 / 6,
+            "apply": 1 / 6,
+            "analyze": 1 / 6,
+            "evaluate": 1 / 6,
+            "create": 1 / 6,
+        }
+
+    # Only include levels that have targets > 0 or have actual questions
+    all_levels = set(level_targets.keys()) | set(blooms_counts.keys())
+    result = []
+    for level in sorted(all_levels):
+        target_pct = level_targets.get(level, 0)
+        target = round(total_questions * target_pct)
+        actual = blooms_counts.get(level, 0)
+        if target > 0 or actual > 0:
+            result.append({
+                "level": level,
+                "actual": actual,
+                "target": target,
+                "status": _rag_status(actual, target),
+            })
+    return result
+
+
+def _rag_status(actual: int, target: int) -> str:
+    """Compute RAG status for a target."""
+    if target <= 0:
+        return "green" if actual > 0 else "empty"
+    if actual == 0:
+        return "empty"
+    ratio = actual / target
+    if ratio >= 0.8:
+        return "green"
+    if ratio >= 0.5:
+        return "amber"
+    return "red"
 
 
 def _generate_instructions(

@@ -58,6 +58,8 @@ export const questionAPI = {
   research: (data: any) => api.post("/questions/research", data),
   regenerateQuestion: (data: any) =>
     api.post("/questions/generate/regenerate", data),
+  getBankAnalytics: (bankId: number) =>
+    api.get(`/questions/banks/${bankId}/analytics`),
 };
 
 // ── Papers ──
@@ -71,6 +73,7 @@ export const paperAPI = {
   addQuestion: (paperId: number, data: any) =>
     api.post(`/papers/${paperId}/questions`, data),
   assembleWithAI: (data: any) => api.post("/papers/assemble", data),
+  getCoverage: (paperId: number) => api.get(`/papers/${paperId}/coverage`),
 };
 
 // ── Exams ──
@@ -156,6 +159,47 @@ export const classAPI = {
     api.post(`/classes/${classId}/assign-exam`, data),
   getAssignments: (classId: number) =>
     api.get(`/classes/${classId}/assignments`),
+};
+
+// ── Taxonomy ──
+
+export const taxonomyAPI = {
+  generate: (data: { board: string; class_grade: number; subject: string }) =>
+    api.post("/taxonomy/generate", data),
+  generateFromPdf: (documentId: number) =>
+    api.post("/taxonomy/generate/from-pdf", { document_id: documentId }),
+  save: (data: any) => api.post("/taxonomy/save", data),
+  analyzeImpact: (data: {
+    chapter_id: number;
+    change_type: string;
+    new_value?: string;
+  }) => api.post("/taxonomy/impact-analysis", data),
+  updateChapter: (
+    id: number,
+    data: {
+      name?: string;
+      textbook_reference?: string;
+      marks_weightage?: number;
+      question_pattern_notes?: string;
+      order?: number;
+      impact_acknowledged: boolean;
+    },
+  ) => api.put(`/taxonomy/chapters/${id}`, data),
+  deprecateChapter: (id: number) =>
+    api.post(`/taxonomy/chapters/${id}/deprecate`),
+  addChapter: (data: {
+    curriculum_subject_id: number;
+    name: string;
+    textbook_reference?: string;
+    marks_weightage?: number;
+    order?: number;
+  }) => api.post("/taxonomy/chapters", data),
+  list: (params?: { board?: string; class_grade?: number }) =>
+    api.get("/taxonomy/list", { params }),
+  clone: (data: { source_curriculum_id: number; new_academic_year: string }) =>
+    api.post("/taxonomy/clone", data),
+  getSubjectDetail: (subjectId: number) =>
+    api.get(`/taxonomy/subjects/${subjectId}`),
 };
 
 // ── Curriculum ──

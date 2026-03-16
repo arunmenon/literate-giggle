@@ -376,6 +376,8 @@ export interface PaperAssemblyResult {
     topic_coverage: Record<string, number>;
     blooms_distribution: Record<string, number>;
     difficulty_distribution: Record<string, number>;
+    chapter_targets?: PaperChapterTarget[];
+    blooms_targets?: PaperBloomsTarget[];
   };
   gaps_filled: number;
 }
@@ -434,4 +436,120 @@ export interface PDFUploadResponse {
   document: UploadedDocument;
   extracted_text_preview: string;
   question_count?: number;
+}
+
+// ── Bank Analytics ──
+
+export interface BankAnalytics {
+  bank_id: number;
+  board: string;
+  class_grade: number;
+  subject: string;
+  total_questions: number;
+  chapters_covered: number;
+  chapters_total: number;
+  chapter_coverage: ChapterCoverage[];
+  composition: BankComposition;
+  gap_alerts: GapAlert[];
+}
+
+export interface ChapterCoverage {
+  chapter_id: number;
+  chapter_name: string;
+  textbook_ref?: string;
+  question_count: number;
+  target_count: number;
+  by_difficulty: Record<string, number>;
+  by_type: Record<string, number>;
+  by_blooms: Record<string, number>;
+  status: "green" | "amber" | "red" | "empty";
+}
+
+export interface BankComposition {
+  by_type: Record<string, number>;
+  by_difficulty: Record<string, number>;
+  by_blooms: Record<string, number>;
+}
+
+export interface GapAlert {
+  chapter_id: number;
+  chapter_name: string;
+  questions_needed: number;
+  status: "empty" | "red";
+}
+
+// ── Impact Analysis ──
+
+export interface ImpactAnalysis {
+  affected_questions: number;
+  affected_papers: number;
+  affected_mastery_records: number;
+  affected_workspaces: number;
+  change_type:
+    | "safe_rename"
+    | "safe_add"
+    | "breaking_delete"
+    | "breaking_modify"
+    | "cosmetic"
+    | "targets_change";
+  recommendation: string;
+}
+
+// ── Taxonomy Generation ──
+
+export interface GeneratedTaxonomyTree {
+  chapters: GeneratedTaxonomyChapter[];
+  textbook_name: string;
+  total_marks: number;
+  notes: string;
+}
+
+export interface GeneratedTaxonomyChapter {
+  number: number;
+  name: string;
+  textbook_reference: string;
+  marks_weightage: number;
+  question_pattern_notes: string;
+  topics: GeneratedTaxonomyTopic[];
+}
+
+export interface GeneratedTaxonomyTopic {
+  name: string;
+  description: string;
+  learning_outcomes: GeneratedTaxonomyOutcome[];
+}
+
+export interface GeneratedTaxonomyOutcome {
+  description: string;
+  bloom_level: string;
+}
+
+// ── Curriculum List + Paper Coverage Targets ──
+
+export interface CurriculumListItem {
+  id: number;
+  board_code: string;
+  board_name: string;
+  academic_year: string;
+  is_active: boolean;
+  subjects: Array<{
+    id: number;
+    name: string;
+    class_grade: number;
+    chapter_count: number;
+  }>;
+}
+
+export interface PaperChapterTarget {
+  chapter_name: string;
+  actual: number;
+  target: number;
+  status: "green" | "amber" | "red" | "empty";
+}
+
+export interface PaperBloomsTarget {
+  level: string;
+  actual: number;
+  target: number;
+  status: "green" | "amber" | "red";
 }

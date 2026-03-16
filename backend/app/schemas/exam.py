@@ -143,6 +143,8 @@ class ApproveQuestionItem(BaseModel):
     correct_option: Optional[str] = None
     marking_scheme: Optional[list[dict]] = None
     source: Optional[str] = None
+    # Taxonomy FK
+    chapter_id: Optional[int] = None
     # Provenance fields
     original_ai_text: Optional[str] = None
     teacher_edited: bool = False
@@ -360,10 +362,12 @@ class PaperAssemblyRequest(BaseModel):
 
 
 class CoverageAnalysis(BaseModel):
-    topic_coverage: dict[str, float]  # topic -> coverage percentage
-    blooms_distribution: dict[str, int]  # blooms level -> count
-    difficulty_distribution: dict[str, int]  # difficulty -> count
-    chapter_distribution: dict[str, int]  # chapter -> count
+    topic_coverage: dict[str, float] = {}  # topic -> coverage percentage
+    blooms_distribution: dict[str, int] = {}  # blooms level -> count
+    difficulty_distribution: dict[str, int] = {}  # difficulty -> count
+    chapter_distribution: dict[str, int] = {}  # chapter -> count
+    chapter_targets: list[dict] = []  # [{chapter_name, actual, target, status}]
+    blooms_targets: list[dict] = []  # [{level, actual, target, status}]
 
 
 class PaperAssemblyResult(BaseModel):

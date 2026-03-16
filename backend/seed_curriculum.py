@@ -701,6 +701,394 @@ ICSE_MATH_10_CHAPTERS = [
 ]
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CBSE Class 10 English
+# ─────────────────────────────────────────────────────────────────────────────
+
+CBSE_ENGLISH_10_CHAPTERS = [
+    {
+        "number": 1, "name": "Reading Comprehension",
+        "textbook_reference": "NCERT First Flight / Footprints",
+        "marks_weightage": 20,
+        "topics": [
+            ("Unseen Passage", "Comprehension of factual and discursive passages"),
+            ("Case-based Passage", "Data interpretation and inference from case-based text"),
+        ],
+    },
+    {
+        "number": 2, "name": "Writing",
+        "textbook_reference": "NCERT English Communicative",
+        "marks_weightage": 20,
+        "topics": [
+            ("Letter Writing", "Formal and informal letters"),
+            ("Story Writing", "Narrative composition from given prompts"),
+            ("Article Writing", "Analytical and persuasive writing"),
+        ],
+    },
+    {
+        "number": 3, "name": "Grammar",
+        "textbook_reference": "NCERT English Grammar",
+        "marks_weightage": 20,
+        "topics": [
+            ("Tenses", "Correct use of tenses in context"),
+            ("Voice", "Active and passive voice transformations"),
+            ("Reported Speech", "Direct to indirect speech conversion"),
+            ("Conditionals", "If-clauses and conditional sentences"),
+            ("Nouns", "Plurals, collective nouns, abstract nouns"),
+        ],
+    },
+    {
+        "number": 4, "name": "Literature",
+        "textbook_reference": "NCERT First Flight / Footprints without Feet",
+        "marks_weightage": 20,
+        "topics": [
+            ("Prose", "Short stories and prose passages"),
+            ("Poetry", "Poems and poetic devices"),
+            ("Figures of Speech", "Simile, metaphor, personification, alliteration"),
+        ],
+    },
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CBSE Class 10 Social Studies
+# ─────────────────────────────────────────────────────────────────────────────
+
+CBSE_SST_10_CHAPTERS = [
+    {
+        "number": 1, "name": "History",
+        "textbook_reference": "NCERT India and the Contemporary World II",
+        "marks_weightage": 20,
+        "topics": [
+            ("Nationalism in India", "Rise of nationalism, Civil Disobedience Movement"),
+            ("French Revolution", "Causes, course, and impact"),
+            ("Industrial Revolution", "Changes in industry and society"),
+        ],
+    },
+    {
+        "number": 2, "name": "Geography",
+        "textbook_reference": "NCERT Contemporary India II",
+        "marks_weightage": 20,
+        "topics": [
+            ("Resources and Development", "Types and conservation of resources"),
+            ("Soil Types", "Classification and distribution of soils"),
+            ("Water Resources", "Conservation and management"),
+        ],
+    },
+    {
+        "number": 3, "name": "Civics",
+        "textbook_reference": "NCERT Democratic Politics II",
+        "marks_weightage": 20,
+        "topics": [
+            ("Federalism", "Federal structure and division of powers"),
+            ("Democracy and Diversity", "Social divisions and politics"),
+            ("Political Parties", "Role and types of political parties"),
+        ],
+    },
+    {
+        "number": 4, "name": "Economics",
+        "textbook_reference": "NCERT Understanding Economic Development",
+        "marks_weightage": 20,
+        "topics": [
+            ("Development", "GDP, income, and development indicators"),
+            ("Sectors of Economy", "Primary, secondary, tertiary sectors"),
+            ("Money and Credit", "Banking and financial institutions"),
+        ],
+    },
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CBSE Class 9 Mathematics
+# ─────────────────────────────────────────────────────────────────────────────
+
+CBSE_MATH_9_CHAPTERS = [
+    {
+        "number": 1, "name": "Number Systems",
+        "textbook_reference": "NCERT Ch. 1",
+        "marks_weightage": 8,
+        "topics": [
+            ("Rational Numbers", "Properties and representation on number line"),
+            ("Irrational Numbers", "Identifying and locating irrational numbers"),
+            ("Real Numbers", "Decimal expansions and operations"),
+        ],
+    },
+    {
+        "number": 2, "name": "Polynomials",
+        "textbook_reference": "NCERT Ch. 2",
+        "marks_weightage": 8,
+        "topics": [
+            ("Polynomials in One Variable", "Degree, coefficients, zeroes"),
+            ("Factorisation", "Factor theorem and factorisation techniques"),
+        ],
+    },
+    {
+        "number": 3, "name": "Coordinate Geometry",
+        "textbook_reference": "NCERT Ch. 3",
+        "marks_weightage": 4,
+        "topics": [
+            ("Cartesian System", "Plotting points and identifying quadrants"),
+        ],
+    },
+    {
+        "number": 4, "name": "Linear Equations in Two Variables",
+        "textbook_reference": "NCERT Ch. 4",
+        "marks_weightage": 8,
+        "topics": [
+            ("Linear Equations", "Solution of linear equations in two variables"),
+        ],
+    },
+    {
+        "number": 5, "name": "Triangles",
+        "textbook_reference": "NCERT Ch. 7",
+        "marks_weightage": 12,
+        "topics": [
+            ("Congruence of Triangles", "SSS, SAS, ASA, AAS, RHS criteria"),
+            ("Properties of Triangles", "Angle sum, exterior angle, inequalities"),
+        ],
+    },
+    {
+        "number": 6, "name": "Heron's Formula",
+        "textbook_reference": "NCERT Ch. 12",
+        "marks_weightage": 8,
+        "topics": [
+            ("Area of Triangle", "Heron's formula for scalene triangles"),
+            ("Application", "Area of quadrilaterals using Heron's formula"),
+        ],
+    },
+    {
+        "number": 7, "name": "Quadrilaterals",
+        "textbook_reference": "NCERT Ch. 8",
+        "marks_weightage": 8,
+        "topics": [
+            ("Properties of Quadrilaterals", "Parallelogram, rhombus, rectangle, square"),
+        ],
+    },
+    {
+        "number": 8, "name": "Circles",
+        "textbook_reference": "NCERT Ch. 10",
+        "marks_weightage": 8,
+        "topics": [
+            ("Properties of Circles", "Chords, arcs, angles subtended"),
+        ],
+    },
+    {
+        "number": 9, "name": "Statistics",
+        "textbook_reference": "NCERT Ch. 14",
+        "marks_weightage": 8,
+        "topics": [
+            ("Collection and Presentation", "Frequency distributions, histograms, bar graphs"),
+            ("Measures of Central Tendency", "Mean, median, mode"),
+        ],
+    },
+    {
+        "number": 10, "name": "Probability",
+        "textbook_reference": "NCERT Ch. 15",
+        "marks_weightage": 8,
+        "topics": [
+            ("Experimental Probability", "Empirical probability from experiments"),
+        ],
+    },
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CBSE Class 8 Science
+# ─────────────────────────────────────────────────────────────────────────────
+
+CBSE_SCIENCE_8_CHAPTERS = [
+    {
+        "number": 1, "name": "Crop Production and Management",
+        "textbook_reference": "NCERT Ch. 1",
+        "marks_weightage": 5,
+        "topics": [("Agricultural Practices", "Preparation of soil, sowing, irrigation")],
+    },
+    {
+        "number": 2, "name": "Microorganisms",
+        "textbook_reference": "NCERT Ch. 2",
+        "marks_weightage": 6,
+        "topics": [
+            ("Friendly Microorganisms", "Use of microorganisms in food and medicine"),
+            ("Harmful Microorganisms", "Disease-causing microorganisms, food preservation"),
+        ],
+    },
+    {
+        "number": 3, "name": "Synthetic Fibres and Plastics",
+        "textbook_reference": "NCERT Ch. 3",
+        "marks_weightage": 5,
+        "topics": [
+            ("Synthetic Fibres", "Types -- nylon, polyester, acrylic"),
+            ("Plastics", "Thermoplastics and thermosetting plastics"),
+        ],
+    },
+    {
+        "number": 4, "name": "Materials: Metals and Non-metals",
+        "textbook_reference": "NCERT Ch. 4",
+        "marks_weightage": 5,
+        "topics": [("Properties", "Physical and chemical properties of metals and non-metals")],
+    },
+    {
+        "number": 5, "name": "Coal and Petroleum",
+        "textbook_reference": "NCERT Ch. 5",
+        "marks_weightage": 5,
+        "topics": [("Fossil Fuels", "Formation, extraction, and conservation")],
+    },
+    {
+        "number": 6, "name": "Combustion and Flame",
+        "textbook_reference": "NCERT Ch. 6",
+        "marks_weightage": 6,
+        "topics": [
+            ("Combustion", "Types of combustion, ignition temperature"),
+            ("Flame", "Structure and zones of flame"),
+        ],
+    },
+    {
+        "number": 7, "name": "Conservation of Plants and Animals",
+        "textbook_reference": "NCERT Ch. 7",
+        "marks_weightage": 5,
+        "topics": [("Biodiversity", "Deforestation, conservation, biosphere reserves")],
+    },
+    {
+        "number": 8, "name": "Cell - Structure and Functions",
+        "textbook_reference": "NCERT Ch. 8",
+        "marks_weightage": 5,
+        "topics": [("Cell Biology", "Cell organelles, plant and animal cells")],
+    },
+    {
+        "number": 9, "name": "Reproduction in Animals",
+        "textbook_reference": "NCERT Ch. 9",
+        "marks_weightage": 5,
+        "topics": [("Reproduction", "Sexual and asexual reproduction in animals")],
+    },
+    {
+        "number": 10, "name": "Force and Pressure",
+        "textbook_reference": "NCERT Ch. 11",
+        "marks_weightage": 6,
+        "topics": [
+            ("Force", "Contact and non-contact forces"),
+            ("Pressure", "Pressure in fluids, atmospheric pressure"),
+        ],
+    },
+    {
+        "number": 11, "name": "Friction",
+        "textbook_reference": "NCERT Ch. 12",
+        "marks_weightage": 5,
+        "topics": [("Friction", "Types, factors affecting, and reducing friction")],
+    },
+    {
+        "number": 12, "name": "Sound",
+        "textbook_reference": "NCERT Ch. 13",
+        "marks_weightage": 5,
+        "topics": [("Sound Production", "Vibration, frequency, amplitude, loudness")],
+    },
+    {
+        "number": 13, "name": "Chemical Effects of Electric Current",
+        "textbook_reference": "NCERT Ch. 14",
+        "marks_weightage": 5,
+        "topics": [("Electroplating", "Electrolysis and its applications")],
+    },
+    {
+        "number": 14, "name": "Light",
+        "textbook_reference": "NCERT Ch. 16",
+        "marks_weightage": 5,
+        "topics": [("Reflection", "Laws of reflection, mirrors, dispersion")],
+    },
+    {
+        "number": 15, "name": "Stars and the Solar System",
+        "textbook_reference": "NCERT Ch. 17",
+        "marks_weightage": 5,
+        "topics": [("Astronomy", "Stars, planets, constellations, satellites")],
+    },
+    {
+        "number": 16, "name": "Pollution of Air and Water",
+        "textbook_reference": "NCERT Ch. 18",
+        "marks_weightage": 5,
+        "topics": [("Pollution", "Causes, effects, and prevention of air and water pollution")],
+    },
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ICSE Class 10 English
+# ─────────────────────────────────────────────────────────────────────────────
+
+ICSE_ENGLISH_10_CHAPTERS = [
+    {
+        "number": 1, "name": "Literature",
+        "textbook_reference": "Treasure Trove",
+        "marks_weightage": 30,
+        "topics": [
+            ("Poetry", "Poems from Treasure Trove with analysis"),
+            ("Prose", "Short stories from Treasure Trove"),
+            ("Shakespeare", "Merchant of Venice / select play"),
+        ],
+    },
+    {
+        "number": 2, "name": "Writing",
+        "textbook_reference": "Total English",
+        "marks_weightage": 25,
+        "topics": [
+            ("Composition", "Essay and narrative writing"),
+            ("Letter Writing", "Formal and informal letters"),
+            ("Notice and Email", "Formal notices and email writing"),
+        ],
+    },
+    {
+        "number": 3, "name": "Grammar",
+        "textbook_reference": "Total English",
+        "marks_weightage": 25,
+        "topics": [
+            ("Transformation", "Sentence transformation and rewriting"),
+            ("Correction", "Error correction in sentences"),
+            ("Vocabulary", "Synonyms, antonyms, phrasal verbs"),
+        ],
+    },
+    {
+        "number": 4, "name": "Comprehension",
+        "textbook_reference": "Total English",
+        "marks_weightage": 20,
+        "topics": [
+            ("Unseen Passage", "Reading comprehension and inference"),
+        ],
+    },
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Additional ICSE Class 10 Math chapters (Sets, Mensuration, Statistics)
+# ─────────────────────────────────────────────────────────────────────────────
+
+ICSE_MATH_10_EXTRA_CHAPTERS = [
+    {
+        "number": 11, "name": "Sets",
+        "textbook_reference": "Selina Ch. 11",
+        "marks_weightage": 5,
+        "topics": [
+            ("Set Operations", "Union, intersection, complement, difference"),
+            ("Venn Diagrams", "Representation of sets using Venn diagrams"),
+        ],
+    },
+    {
+        "number": 12, "name": "Statistics",
+        "textbook_reference": "Selina Ch. 12",
+        "marks_weightage": 5,
+        "topics": [
+            ("Measures of Central Tendency", "Mean, median, mode of grouped data"),
+            ("Graphical Representation", "Histograms, ogives, frequency polygons"),
+        ],
+    },
+    {
+        "number": 13, "name": "Mensuration",
+        "textbook_reference": "Selina Ch. 13",
+        "marks_weightage": 8,
+        "topics": [
+            ("Surface Area", "Cylinder, cone, sphere surface areas"),
+            ("Volume", "Volume of solids and combined shapes"),
+        ],
+    },
+]
+
+
 async def seed_curriculum():
     """Seed curriculum data. Idempotent -- checks before inserting."""
     await init_db()
@@ -767,15 +1155,92 @@ async def seed_curriculum():
             chapters=ICSE_MATH_10_CHAPTERS,
         )
 
-        # ─── Skeleton subjects ───
+        # ─── CBSE English Class 10 ───
+        await _seed_subject(
+            db, curricula["CBSE"],
+            code="ENG", name="English", class_grade=10,
+            textbook_name="NCERT English Class 10",
+            total_marks=80,
+            chapters=CBSE_ENGLISH_10_CHAPTERS,
+        )
+
+        # ─── CBSE Social Studies Class 10 ───
+        await _seed_subject(
+            db, curricula["CBSE"],
+            code="SST", name="Social Studies", class_grade=10,
+            textbook_name="NCERT Social Studies Class 10",
+            total_marks=80,
+            chapters=CBSE_SST_10_CHAPTERS,
+        )
+
+        # ─── CBSE Math Class 9 ───
+        await _seed_subject(
+            db, curricula["CBSE"],
+            code="MATH", name="Mathematics", class_grade=9,
+            textbook_name="NCERT Mathematics Class 9",
+            total_marks=80,
+            chapters=CBSE_MATH_9_CHAPTERS,
+        )
+
+        # ─── CBSE Science Class 8 ───
+        await _seed_subject(
+            db, curricula["CBSE"],
+            code="SCI", name="Science", class_grade=8,
+            textbook_name="NCERT Science Class 8",
+            total_marks=80,
+            chapters=CBSE_SCIENCE_8_CHAPTERS,
+        )
+
+        # ─── ICSE English Class 10 ───
+        await _seed_subject(
+            db, curricula["ICSE"],
+            code="ENG", name="English", class_grade=10,
+            textbook_name="Treasure Trove / Total English",
+            total_marks=100,
+            chapters=ICSE_ENGLISH_10_CHAPTERS,
+        )
+
+        # ─── ICSE Math Class 10 extra chapters (Sets, Statistics, Mensuration) ───
+        # These are added to the existing ICSE Math subject
+        existing_icse_math = await db.execute(
+            select(CurriculumSubject).where(
+                CurriculumSubject.curriculum_id == curricula["ICSE"].id,
+                CurriculumSubject.code == "MATH",
+                CurriculumSubject.class_grade == 10,
+            )
+        )
+        icse_math_subject = existing_icse_math.scalar_one_or_none()
+        if icse_math_subject:
+            for ch_data in ICSE_MATH_10_EXTRA_CHAPTERS:
+                existing_ch = await db.execute(
+                    select(CurriculumChapter).where(
+                        CurriculumChapter.subject_id == icse_math_subject.id,
+                        CurriculumChapter.name == ch_data["name"],
+                    )
+                )
+                if not existing_ch.scalar_one_or_none():
+                    chapter = CurriculumChapter(
+                        subject_id=icse_math_subject.id,
+                        number=ch_data["number"],
+                        name=ch_data["name"],
+                        textbook_reference=ch_data.get("textbook_reference"),
+                        marks_weightage=ch_data.get("marks_weightage"),
+                    )
+                    db.add(chapter)
+                    await db.flush()
+                    for topic_data in ch_data.get("topics", []):
+                        topic_name = topic_data[0] if isinstance(topic_data, tuple) else topic_data
+                        topic_desc = topic_data[1] if isinstance(topic_data, tuple) and len(topic_data) > 1 else None
+                        db.add(CurriculumTopic(
+                            chapter_id=chapter.id,
+                            name=topic_name,
+                            description=topic_desc,
+                        ))
+
+        # ─── Skeleton subjects (no chapters yet) ───
         skeleton_subjects = [
-            ("CBSE", "ENG", "English", 10, "NCERT English Class 10", 80),
-            ("CBSE", "SST", "Social Studies", 10, "NCERT Social Studies Class 10", 80),
-            ("CBSE", "MATH", "Mathematics", 9, "NCERT Mathematics Class 9", 80),
             ("CBSE", "SCI", "Science", 9, "NCERT Science Class 9", 80),
             ("CBSE", "MATH", "Mathematics", 8, "NCERT Mathematics Class 8", 80),
-            ("CBSE", "SCI", "Science", 8, "NCERT Science Class 8", 80),
-            ("ICSE", "ENG", "English", 10, "Treasure Trove / Total English", 100),
             ("ICSE", "SCI", "Science", 10, "Selina Concise Science", 80),
         ]
         for board_code, subj_code, subj_name, grade, textbook, marks in skeleton_subjects:

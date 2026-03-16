@@ -1,5 +1,16 @@
-import React, { useEffect, useState, useRef } from "react";
-import { questionAPI, authAPI, curriculumAPI } from "../services/api";
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
+import {
+  questionAPI,
+  authAPI,
+  curriculumAPI,
+  taxonomyAPI,
+} from "../services/api";
 import type {
   QuestionBank,
   Question,
@@ -8,6 +19,8 @@ import type {
   CurriculumSelection,
   ResearchResult,
   UploadedDocument,
+  BankAnalytics as BankAnalyticsType,
+  ImpactAnalysis as ImpactAnalysisType,
 } from "../types";
 import {
   Button,
@@ -23,6 +36,7 @@ import {
   Select,
   Skeleton,
   Progress,
+  useToast,
 } from "../components/ui";
 import { CurriculumPicker } from "../components/CurriculumPicker";
 import { ResearchBrief } from "../components/ResearchBrief";
@@ -31,6 +45,15 @@ import {
   type ReviewStatus,
   type ReviewQuestionData,
 } from "../components/QuestionReviewCard";
+import { BankAnalytics } from "../components/BankAnalytics";
+import {
+  QuestionFilters,
+  type QuestionFilterState,
+  EMPTY_FILTERS,
+  applyFilters,
+} from "../components/QuestionFilters";
+import { TaxonomyCreator } from "../components/TaxonomyCreator";
+import { ImpactAnalysis } from "../components/ImpactAnalysis";
 import { cn } from "../lib/utils";
 import {
   BookOpen,
@@ -50,6 +73,8 @@ import {
   Upload,
   File,
   X,
+  Pencil,
+  Loader2,
 } from "lucide-react";
 
 const BOARDS = ["CBSE", "ICSE", "State Board"];
@@ -180,6 +205,32 @@ const QuestionBankPage: React.FC = () => {
   const [showQForm, setShowQForm] = useState(false);
   const [showGenPanel, setShowGenPanel] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { toast, ToastContainer } = useToast();
+
+  // Analytics state
+  const [analytics, setAnalytics] = useState<BankAnalyticsType | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+
+  // Filters state
+  const [filters, setFilters] = useState<QuestionFilterState>(EMPTY_FILTERS);
+
+  // Taxonomy creator state
+  const [showTaxonomyCreator, setShowTaxonomyCreator] = useState(false);
+
+  // Chapter edit modal state
+  const [editingChapter, setEditingChapter] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
+  const [editChapterName, setEditChapterName] = useState("");
+  const [editChapterRef, setEditChapterRef] = useState("");
+  const [editChapterMarks, setEditChapterMarks] = useState<number | "">("");
+  const [chapterImpact, setChapterImpact] = useState<ImpactAnalysisType | null>(
+    null,
+  );
+  const [impactLoading, setImpactLoading] = useState(false);
+  const [applyingChapterEdit, setApplyingChapterEdit] = useState(false);
 
   // AI preferences
   const [aiLevel, setAiLevel] =
@@ -291,9 +342,33 @@ const QuestionBankPage: React.FC = () => {
     }
   };
 
+  const selectedBankData = banks.find((b) => b.id === selectedBank);
+
+  const fetchAnalytics = useCallback((bankId: number) => {
+    setAnalyticsLoading(true);
+    setAnalyticsError(null);
+    questionAPI
+      .getBankAnalytics(bankId)
+      .then((res) => {
+        setAnalytics(res.data);
+      })
+      .catch((err) => {
+        setAnalyticsError(
+          err.response?.data?.detail ?? "Failed to load analytics",
+        );
+        setAnalytics(null);
+      })
+      .finally(() => {
+        setAnalyticsLoading(false);
+      });
+  }, []);
+
   const loadQuestions = (bankId: number) => {
     setSelectedBank(bankId);
     setShowGenPanel(false);
+    setFilters(EMPTY_FILTERS);
+    setShowTaxonomyCreator(false);
+    fetchAnalytics(bankId);
     questionAPI.list({ bank_id: bankId }).then((res) => {
       setQuestions(res.data);
       // Auto-open AI generation panel for empty banks
@@ -301,6 +376,128 @@ const QuestionBankPage: React.FC = () => {
         openGenPanel();
       }
     });
+  };
+
+  // Build chapter map for filtering
+  const chapterMap = useMemo(() => {
+    const map = new Map<number, string>();
+    if (analytics) {
+      for (const ch of analytics.chapter_coverage) {
+        map.set(ch.chapter_id, ch.chapter_name);
+      }
+    }
+    return map;
+  }, [analytics]);
+
+  // Filtered questions
+  const filteredQuestions = useMemo(() => {
+    return applyFilters(questions, filters, chapterMap);
+  }, [questions, filters, chapterMap]);
+
+  // Handle chapter click from analytics -> filter
+  const handleChapterFilter = (chapterId: number) => {
+    setFilters((prev) => ({
+      ...prev,
+      chapters: prev.chapters.includes(chapterId)
+        ? prev.chapters.filter((id) => id !== chapterId)
+        : [chapterId],
+    }));
+  };
+
+  // Handle "Fill with AI" from gap alert
+  const handleFillGap = (chapterId: number, chapterName: string) => {
+    const gap = analytics?.gap_alerts.find((g) => g.chapter_id === chapterId);
+    openGenPanel();
+    // Pre-fill curriculum selection with the gap's chapter
+    if (selectedBankData) {
+      setCurriculumSelection({
+        board: selectedBankData.board,
+        class_grade: selectedBankData.class_grade,
+        subject: selectedBankData.subject,
+        chapter: chapterName,
+      });
+    }
+    // Pre-fill count from gap
+    if (gap) {
+      setGenConfig((prev) => ({
+        ...prev,
+        count: gap.questions_needed,
+        difficulty: "medium",
+      }));
+    }
+  };
+
+  // Chapter edit modal handlers
+  const openChapterEdit = (chapterId: number, chapterName: string) => {
+    setEditingChapter({ id: chapterId, name: chapterName });
+    setEditChapterName(chapterName);
+    setEditChapterRef("");
+    setEditChapterMarks("");
+    setChapterImpact(null);
+  };
+
+  const previewImpact = async () => {
+    if (!editingChapter) return;
+    setImpactLoading(true);
+    try {
+      const changeType =
+        editChapterName !== editingChapter.name ? "rename" : "modify";
+      const { data } = await taxonomyAPI.analyzeImpact({
+        chapter_id: editingChapter.id,
+        change_type: changeType,
+        new_value:
+          editChapterName !== editingChapter.name ? editChapterName : undefined,
+      });
+      setChapterImpact(data);
+    } catch (err: any) {
+      setChapterImpact(null);
+    } finally {
+      setImpactLoading(false);
+    }
+  };
+
+  const applyChapterEdit = async () => {
+    if (!editingChapter) return;
+    setApplyingChapterEdit(true);
+    try {
+      const payload: any = { impact_acknowledged: true };
+      if (editChapterName !== editingChapter.name) {
+        payload.name = editChapterName;
+      }
+      if (editChapterRef) {
+        payload.textbook_reference = editChapterRef;
+      }
+      if (editChapterMarks !== "") {
+        payload.marks_weightage = Number(editChapterMarks);
+      }
+      await taxonomyAPI.updateChapter(editingChapter.id, payload);
+      setEditingChapter(null);
+      setChapterImpact(null);
+      // Refresh analytics
+      if (selectedBank) fetchAnalytics(selectedBank);
+    } catch (err: any) {
+      toast(err.response?.data?.detail ?? "Failed to update chapter", "error");
+    } finally {
+      setApplyingChapterEdit(false);
+    }
+  };
+
+  const deprecateChapter = async () => {
+    if (!editingChapter) return;
+    setApplyingChapterEdit(true);
+    try {
+      await taxonomyAPI.deprecateChapter(editingChapter.id);
+      setEditingChapter(null);
+      setChapterImpact(null);
+      if (selectedBank) fetchAnalytics(selectedBank);
+    } catch (err: any) {
+      toast(
+        err.response?.data?.detail ?? "Failed to deprecate chapter",
+        "error",
+      );
+    } finally {
+      setApplyingChapterEdit(false);
+    }
   };
 
   const createBank = async (e: React.FormEvent) => {
@@ -408,7 +605,10 @@ const QuestionBankPage: React.FC = () => {
       // Refresh uploaded docs list
       fetchUploadedDocs();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Upload failed. Please try again.");
+      toast(
+        err.response?.data?.detail || "Upload failed. Please try again.",
+        "error",
+      );
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -487,9 +687,10 @@ const QuestionBankPage: React.FC = () => {
       setRegenCounts(new Map());
       setGenStep("review");
     } catch (err: any) {
-      alert(
+      toast(
         err.response?.data?.detail ||
           "Failed to generate questions. Ensure AI service is configured.",
+        "error",
       );
     } finally {
       setGenerating(false);
@@ -537,7 +738,10 @@ const QuestionBankPage: React.FC = () => {
         });
       }
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Failed to regenerate question");
+      toast(
+        err.response?.data?.detail || "Failed to regenerate question",
+        "error",
+      );
     }
   };
 
@@ -621,13 +825,11 @@ const QuestionBankPage: React.FC = () => {
       setRegenCounts(new Map());
       setShowGenPanel(false);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Failed to save questions");
+      toast(err.response?.data?.detail || "Failed to save questions", "error");
     } finally {
       setApproving(false);
     }
   };
-
-  const selectedBankData = banks.find((b) => b.id === selectedBank);
 
   // Pre-fill and reset generation flow when panel is opened
   const openGenPanel = () => {
@@ -668,6 +870,7 @@ const QuestionBankPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <ToastContainer />
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -803,14 +1006,21 @@ const QuestionBankPage: React.FC = () => {
       {/* Questions Section */}
       {selectedBank && (
         <div className="space-y-4">
+          {/* Section header */}
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold">
                 Questions {selectedBankData && `- ${selectedBankData.name}`}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {questions.length} question{questions.length !== 1 ? "s" : ""}{" "}
-                in this bank
+                {filteredQuestions.length}
+                {filteredQuestions.length !== questions.length
+                  ? ` of ${questions.length}`
+                  : ""}{" "}
+                question{filteredQuestions.length !== 1 ? "s" : ""}
+                {filteredQuestions.length !== questions.length
+                  ? " (filtered)"
+                  : ""}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -827,6 +1037,129 @@ const QuestionBankPage: React.FC = () => {
               </Button>
             </div>
           </div>
+
+          {/* Taxonomy Creator (overlay) */}
+          {showTaxonomyCreator && selectedBankData && (
+            <TaxonomyCreator
+              board={selectedBankData.board}
+              classGrade={selectedBankData.class_grade}
+              subject={selectedBankData.subject}
+              onComplete={() => {
+                setShowTaxonomyCreator(false);
+                if (selectedBank) fetchAnalytics(selectedBank);
+              }}
+              onCancel={() => setShowTaxonomyCreator(false)}
+            />
+          )}
+
+          {/* Bank Analytics Panel (above question list) */}
+          {!showTaxonomyCreator && (
+            <BankAnalytics
+              analytics={analytics}
+              loading={analyticsLoading}
+              error={analyticsError}
+              onFillGap={handleFillGap}
+              onChapterClick={handleChapterFilter}
+              onCreateCurriculum={() => setShowTaxonomyCreator(true)}
+              onRetry={() => selectedBank && fetchAnalytics(selectedBank)}
+              onEditChapter={openChapterEdit}
+            />
+          )}
+
+          {/* Chapter Edit Modal */}
+          {editingChapter && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+              <Card className="w-full max-w-md mx-4">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">
+                      <Pencil className="mr-2 inline h-4 w-4" />
+                      Suggest Edit
+                    </CardTitle>
+                    <button
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        setEditingChapter(null);
+                        setChapterImpact(null);
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Chapter Name
+                    </label>
+                    <Input
+                      value={editChapterName}
+                      onChange={(e) => setEditChapterName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Textbook Reference
+                    </label>
+                    <Input
+                      value={editChapterRef}
+                      onChange={(e) => setEditChapterRef(e.target.value)}
+                      placeholder="e.g. NCERT Ch 3, pg 45-72"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Marks Weightage
+                    </label>
+                    <Input
+                      type="number"
+                      value={editChapterMarks}
+                      onChange={(e) =>
+                        setEditChapterMarks(
+                          e.target.value === "" ? "" : Number(e.target.value),
+                        )
+                      }
+                      placeholder="Optional"
+                    />
+                  </div>
+
+                  {/* Preview Impact button */}
+                  {!chapterImpact && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={previewImpact}
+                      disabled={impactLoading}
+                    >
+                      {impactLoading ? (
+                        <>
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          Analyzing Impact...
+                        </>
+                      ) : (
+                        "Preview Impact"
+                      )}
+                    </Button>
+                  )}
+
+                  {/* Impact results */}
+                  {chapterImpact && (
+                    <ImpactAnalysis
+                      impact={chapterImpact}
+                      loading={applyingChapterEdit}
+                      onProceed={applyChapterEdit}
+                      onDeprecate={deprecateChapter}
+                      onCancel={() => {
+                        setEditingChapter(null);
+                        setChapterImpact(null);
+                      }}
+                    />
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           {/* AI Generation Panel -- Adaptive Flow */}
           {showGenPanel && (
@@ -1515,7 +1848,7 @@ const QuestionBankPage: React.FC = () => {
             </Card>
           )}
 
-          {/* Questions List */}
+          {/* Two-panel layout: Filters sidebar + Question list */}
           {questions.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
@@ -1529,46 +1862,97 @@ const QuestionBankPage: React.FC = () => {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-2">
-              {questions.map((q, i) => (
-                <Card key={q.id} className="transition-all hover:shadow-sm">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                          <span className="text-sm font-semibold text-muted-foreground">
-                            Q{i + 1}
-                          </span>
-                          <Badge variant="outline" className="text-xs">
-                            {q.question_type.replace("_", " ")}
-                          </Badge>
-                          <Badge
-                            variant={getDifficultyVariant(q.difficulty)}
-                            className="text-xs"
-                          >
-                            {q.difficulty}
-                          </Badge>
-                          <Badge variant="secondary" className="text-xs">
-                            {q.marks} marks
-                          </Badge>
-                          {q.source === "ai_generated" && (
-                            <div className="flex items-center gap-1">
-                              <Sparkles className="h-3 w-3 text-primary" />
-                              <span className="text-xs text-primary">AI</span>
+            <div className="flex gap-4">
+              {/* Left: Filters sidebar */}
+              <div className="hidden w-60 shrink-0 lg:block">
+                <div className="sticky top-4 rounded-lg border bg-card p-3">
+                  <QuestionFilters
+                    filters={filters}
+                    onChange={setFilters}
+                    chapters={analytics?.chapter_coverage ?? []}
+                    questions={questions}
+                  />
+                </div>
+              </div>
+
+              {/* Right: Question list */}
+              <div className="min-w-0 flex-1 space-y-2">
+                {filteredQuestions.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-8 text-center">
+                      <p className="text-sm text-muted-foreground">
+                        No questions match the current filters.
+                      </p>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="mt-2"
+                        onClick={() => setFilters(EMPTY_FILTERS)}
+                      >
+                        Clear Filters
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <>
+                    {filteredQuestions.length > 200 && (
+                      <p className="text-xs text-muted-foreground">
+                        Showing first 200 of {filteredQuestions.length}{" "}
+                        questions
+                      </p>
+                    )}
+                    {filteredQuestions.slice(0, 200).map((q, i) => (
+                      <Card
+                        key={q.id}
+                        className="transition-all hover:shadow-sm"
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                <span className="text-sm font-semibold text-muted-foreground">
+                                  Q{i + 1}
+                                </span>
+                                <Badge variant="outline" className="text-xs">
+                                  {q.question_type.replace("_", " ")}
+                                </Badge>
+                                <Badge
+                                  variant={getDifficultyVariant(q.difficulty)}
+                                  className="text-xs"
+                                >
+                                  {q.difficulty}
+                                </Badge>
+                                <Badge variant="secondary" className="text-xs">
+                                  {q.marks} marks
+                                </Badge>
+                                {q.blooms_level && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {q.blooms_level}
+                                  </Badge>
+                                )}
+                                {q.source === "ai_generated" && (
+                                  <div className="flex items-center gap-1">
+                                    <Sparkles className="h-3 w-3 text-primary" />
+                                    <span className="text-xs text-primary">
+                                      AI
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              <p className="text-sm leading-relaxed">
+                                {q.question_text}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {q.topic}
+                              </p>
                             </div>
-                          )}
-                        </div>
-                        <p className="text-sm leading-relaxed">
-                          {q.question_text}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {q.topic}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>

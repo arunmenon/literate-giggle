@@ -112,6 +112,7 @@ async def generate_questions(
     question_type: str = "short_answer",
     count: int = 5,
     chapter: Optional[str] = None,
+    chapter_id: Optional[int] = None,
     research_context: Optional[str] = None,
     teacher_notes: Optional[str] = None,
 ) -> Optional[list[dict]]:
@@ -183,6 +184,9 @@ async def generate_questions(
             question_dict["marking_scheme"] = [
                 step.model_dump() for step in generated_question.marking_scheme
             ]
+
+        if chapter_id is not None:
+            question_dict["chapter_id"] = chapter_id
 
         questions.append(question_dict)
 
@@ -256,6 +260,7 @@ async def regenerate_question(
     class_grade: int = 10,
     subject: str = "",
     chapter: str = "",
+    chapter_id: Optional[int] = None,
 ) -> Optional[dict]:
     """
     Regenerate a single question incorporating teacher feedback.
@@ -317,5 +322,10 @@ async def regenerate_question(
         question_dict["marking_scheme"] = [
             step.model_dump() for step in q.marking_scheme
         ]
+
+    # Preserve chapter_id from original or use provided
+    resolved_chapter_id = chapter_id or original_question.get("chapter_id")
+    if resolved_chapter_id is not None:
+        question_dict["chapter_id"] = resolved_chapter_id
 
     return question_dict

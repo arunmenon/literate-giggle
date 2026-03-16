@@ -101,6 +101,8 @@ class Question(Base):
     is_active = Column(Boolean, default=True)
     times_used = Column(Integer, default=0)
     avg_score_pct = Column(Float)  # Average score when this question is attempted
+    # Taxonomy FK (nullable for gradual migration)
+    chapter_id = Column(Integer, ForeignKey("curriculum_chapters.id"), nullable=True, index=True)
     # Provenance (AI generation tracking)
     original_ai_text = Column(Text, nullable=True)  # Original text before teacher edits
     teacher_edited = Column(Boolean, default=False)  # Whether teacher modified AI output
@@ -109,6 +111,7 @@ class Question(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     bank = relationship("QuestionBank", back_populates="questions")
+    chapter = relationship("CurriculumChapter", foreign_keys=[chapter_id])
     paper_questions = relationship("PaperQuestion", back_populates="question")
 
 

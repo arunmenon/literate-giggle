@@ -18,6 +18,8 @@ import {
   Textarea,
   Skeleton,
   Progress,
+  useConfirmDialog,
+  useToast,
 } from "../components/ui";
 import { cn } from "../lib/utils";
 import {
@@ -54,6 +56,10 @@ const ExamTake: React.FC = () => {
 
   // Keyboard shortcut visibility
   const [showShortcuts, setShowShortcuts] = useState(false);
+
+  // Dialog/Toast
+  const { confirm, ConfirmDialogComponent } = useConfirmDialog();
+  const { toast, ToastContainer } = useToast();
 
   // Track which questions had hints used
   const hintUsedQuestions = new Set(Object.keys(hints).map(Number));
@@ -174,18 +180,17 @@ const ExamTake: React.FC = () => {
   const handleSubmit = async () => {
     if (!sessionId) return;
     saveAnswers();
-    if (
-      !window.confirm(
-        "Submit this exam? You cannot change answers after submission.",
-      )
-    ) {
-      return;
-    }
+    const confirmed = await confirm(
+      "Submit Exam",
+      "Submit this exam? You cannot change answers after submission.",
+      { variant: "destructive", confirmLabel: "Submit" },
+    );
+    if (!confirmed) return;
     try {
       await examAPI.submit(Number(sessionId));
       navigate(`/results/${sessionId}`);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Failed to submit");
+      toast(err.response?.data?.detail || "Failed to submit", "error");
     }
   };
 
@@ -205,9 +210,10 @@ const ExamTake: React.FC = () => {
       }));
       setShowHintPanel(true);
     } catch (err: any) {
-      alert(
+      toast(
         err.response?.data?.detail ||
           "Failed to get hint. AI service may be unavailable.",
+        "error",
       );
     } finally {
       setHintLoading(false);
@@ -259,6 +265,8 @@ const ExamTake: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      <ConfirmDialogComponent />
+      <ToastContainer />
       {/* Header Bar */}
       <Card>
         <CardContent className="py-3 px-5">

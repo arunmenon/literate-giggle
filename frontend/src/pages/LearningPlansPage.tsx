@@ -16,6 +16,7 @@ import {
   Input,
   Select,
   Skeleton,
+  useToast,
 } from "../components/ui";
 import { MasteryHeatmap } from "../components/charts/MasteryHeatmap";
 import { ProgressChart } from "../components/charts/ProgressChart";
@@ -97,6 +98,7 @@ const LearningPlansPage: React.FC = () => {
   const [generating, setGenerating] = useState(false);
   const [expandedPlanId, setExpandedPlanId] = useState<number | null>(null);
   const [showAIChat, setShowAIChat] = useState(false);
+  const { toast, ToastContainer } = useToast();
   const [genForm, setGenForm] = useState({
     subject: "Mathematics",
     board: "CBSE",
@@ -137,7 +139,7 @@ const LearningPlansPage: React.FC = () => {
       setShowGenerate(false);
       setExpandedPlanId(data.id);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Failed to generate plan");
+      toast(err.response?.data?.detail || "Failed to generate plan", "error");
     } finally {
       setGenerating(false);
     }
@@ -149,7 +151,7 @@ const LearningPlansPage: React.FC = () => {
       const { data } = await learningAPI.listPlans();
       setPlans(data);
     } catch {
-      alert("Failed to update objective");
+      toast("Failed to update objective", "error");
     }
   };
 
@@ -258,6 +260,7 @@ const LearningPlansPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <ToastContainer />
       {/* ── Header ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>

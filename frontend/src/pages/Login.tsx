@@ -2,6 +2,16 @@ import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { authAPI } from "../services/api";
 import { useAuth } from "../store/AuthContext";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+  Input,
+  Button,
+} from "../components/ui";
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -27,101 +37,75 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div style={containerStyle}>
-      <div style={cardStyle}>
-        <h1 style={{ textAlign: "center", color: "#2c3e50", marginBottom: 8 }}>
-          ExamIQ
-        </h1>
-        <p
-          style={{
-            textAlign: "center",
-            color: "#7f8c8d",
-            marginBottom: 24,
-            fontSize: 14,
-          }}
-        >
-          Exam Evaluator Platform for ICSE / CBSE
-        </p>
-        {error && <div style={errorStyle}>{error}</div>}
-        <form onSubmit={handleSubmit}>
-          <div style={fieldStyle}>
-            <label>Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              style={inputStyle}
-              placeholder="teacher@school.com"
-            />
-          </div>
-          <div style={fieldStyle}>
-            <label>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              style={inputStyle}
-            />
-          </div>
-          <button type="submit" disabled={loading} style={btnStyle}>
-            {loading ? "Signing in..." : "Sign In"}
-          </button>
-        </form>
-        <p style={{ textAlign: "center", marginTop: 16, fontSize: 14 }}>
-          Don't have an account?{" "}
-          <Link to="/register" style={{ color: "#3498db" }}>
-            Register
-          </Link>
-        </p>
-      </div>
+    <div className="flex min-h-[80vh] items-center justify-center px-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl font-bold tracking-tight">
+            ExamIQ
+          </CardTitle>
+          <CardDescription>
+            Exam Evaluator Platform for ICSE / CBSE
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <label
+                htmlFor="email"
+                className="text-sm font-medium text-foreground"
+              >
+                Email
+              </label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                placeholder="teacher@school.com"
+                autoComplete="email"
+              />
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="password"
+                className="text-sm font-medium text-foreground"
+              >
+                Password
+              </label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+              />
+            </div>
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? "Signing in..." : "Sign In"}
+            </Button>
+          </form>
+        </CardContent>
+        <CardFooter className="justify-center">
+          <p className="text-sm text-muted-foreground">
+            Don't have an account?{" "}
+            <Link
+              to="/register"
+              className="font-medium text-primary hover:underline"
+            >
+              Register
+            </Link>
+          </p>
+        </CardFooter>
+      </Card>
     </div>
   );
-};
-
-const containerStyle: React.CSSProperties = {
-  minHeight: "100vh",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-};
-const cardStyle: React.CSSProperties = {
-  background: "white",
-  padding: 40,
-  borderRadius: 12,
-  width: 400,
-  boxShadow: "0 20px 40px rgba(0,0,0,0.15)",
-};
-const fieldStyle: React.CSSProperties = { marginBottom: 16 };
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  border: "1px solid #ddd",
-  borderRadius: 6,
-  fontSize: 14,
-  marginTop: 4,
-  boxSizing: "border-box",
-};
-const btnStyle: React.CSSProperties = {
-  width: "100%",
-  padding: 12,
-  background: "#3498db",
-  color: "white",
-  border: "none",
-  borderRadius: 6,
-  fontSize: 16,
-  cursor: "pointer",
-  marginTop: 8,
-};
-const errorStyle: React.CSSProperties = {
-  background: "#fee",
-  color: "#c0392b",
-  padding: 10,
-  borderRadius: 6,
-  marginBottom: 16,
-  fontSize: 14,
 };
 
 export default Login;

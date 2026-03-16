@@ -100,6 +100,8 @@ class TopicMastery(Base):
     subtopic = Column(String(255))
     board = Column(String(50), nullable=False)
     class_grade = Column(Integer, nullable=False)
+    # Taxonomy FK (nullable for gradual migration)
+    chapter_id = Column(Integer, ForeignKey("curriculum_chapters.id"), nullable=True, index=True)
     # Mastery tracking
     mastery_level = Column(Enum(MasteryLevel), default=MasteryLevel.NOT_STARTED)
     score_history = Column(JSON)  # [{"date": "...", "score": 75, "exam": "..."}]

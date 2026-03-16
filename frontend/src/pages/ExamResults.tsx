@@ -13,6 +13,7 @@ import {
   Progress,
   Skeleton,
   ScoreIndicator,
+  useToast,
 } from "../components/ui";
 import { BloomsRadar, DifficultyBreakdown } from "../components/charts";
 import { cn, getGradeColor } from "../lib/utils";
@@ -42,6 +43,8 @@ const ExamResults: React.FC = () => {
   const [streamProgress, setStreamProgress] = useState<
     Array<{ question_number: number; status: string }>
   >([]);
+
+  const { toast, ToastContainer } = useToast();
 
   // AI Explain state per question
   const [explanations, setExplanations] = useState<
@@ -133,7 +136,10 @@ const ExamResults: React.FC = () => {
         });
         setEvaluation(data);
       } catch (fallbackErr: any) {
-        alert(fallbackErr.response?.data?.detail || "Evaluation failed");
+        toast(
+          fallbackErr.response?.data?.detail || "Evaluation failed",
+          "error",
+        );
       }
     } finally {
       setEvaluating(false);
@@ -148,9 +154,10 @@ const ExamResults: React.FC = () => {
       });
       setExplanations((prev) => ({ ...prev, [questionEvaluationId]: data }));
     } catch (err: any) {
-      alert(
+      toast(
         err.response?.data?.detail ||
           "Failed to get explanation. AI service may be unavailable.",
+        "error",
       );
     } finally {
       setExplainLoading((prev) => ({
@@ -295,6 +302,7 @@ const ExamResults: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <ToastContainer />
       {/* Back navigation */}
       <Link
         to="/exams"

@@ -11,7 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from .core.config import settings, DANGEROUS_SECRET_DEFAULTS
 from .core.database import init_db
 from .core.rate_limit import limiter
-from .api.routes import auth, questions, papers, exams, evaluations, learning, dashboard, ai, curriculum, workspace, classes
+from .api.routes import auth, questions, papers, exams, evaluations, learning, dashboard, ai, curriculum, workspace, classes, taxonomy_admin
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +66,7 @@ app.include_router(ai.router, prefix="/api")
 app.include_router(curriculum.router, prefix="/api")
 app.include_router(workspace.router, prefix="/api")
 app.include_router(classes.router, prefix="/api")
+app.include_router(taxonomy_admin.router, prefix="/api")
 
 
 @app.get("/api/health")

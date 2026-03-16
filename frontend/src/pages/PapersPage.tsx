@@ -5,6 +5,8 @@ import type {
   Question,
   CurriculumSelection,
   PaperAssemblyResult,
+  PaperChapterTarget,
+  PaperBloomsTarget,
 } from "../types";
 import {
   Button,
@@ -19,6 +21,7 @@ import {
   Select,
   Skeleton,
   Progress,
+  useToast,
 } from "../components/ui";
 import { CurriculumPicker } from "../components/CurriculumPicker";
 import { cn } from "../lib/utils";
@@ -39,6 +42,9 @@ import {
   Layers,
   BookOpen,
   Download,
+  Eye,
+  Loader2,
+  X,
 } from "lucide-react";
 import api from "../services/api";
 
@@ -75,6 +81,7 @@ const STATUS_MAP: Record<
 const PapersPage: React.FC = () => {
   const [papers, setPapers] = useState<QuestionPaper[]>([]);
   const [loading, setLoading] = useState(true);
+  const { toast, ToastContainer } = useToast();
 
   // Manual create form
   const [showForm, setShowForm] = useState(false);
@@ -111,6 +118,15 @@ const PapersPage: React.FC = () => {
     useState<PaperAssemblyResult | null>(null);
   const [assemblyProgress, setAssemblyProgress] = useState("");
   const [savingPaper, setSavingPaper] = useState(false);
+
+  // Coverage modal for existing papers
+  const [coverageModal, setCoverageModal] = useState<{
+    paperId: number;
+    title: string;
+    loading: boolean;
+    chapter_targets: PaperChapterTarget[];
+    blooms_targets: PaperBloomsTarget[];
+  } | null>(null);
 
   useEffect(() => {
     paperAPI.list().then((res) => {
@@ -156,7 +172,7 @@ const PapersPage: React.FC = () => {
         ),
       );
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Status update failed");
+      toast(err.response?.data?.detail || "Status update failed", "error");
     }
   };
 
@@ -235,7 +251,10 @@ const PapersPage: React.FC = () => {
       setAssemblyProgress("");
       setBuilderStep(4);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Failed to assemble paper with AI");
+      toast(
+        err.response?.data?.detail || "Failed to assemble paper with AI",
+        "error",
+      );
       setAssemblyProgress("");
     } finally {
       setAssembling(false);
@@ -298,7 +317,7 @@ const PapersPage: React.FC = () => {
       setShowBuilder(false);
       setBuilderStep(1);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Failed to save paper");
+      toast(err.response?.data?.detail || "Failed to save paper", "error");
     } finally {
       setSavingPaper(false);
     }
@@ -319,7 +338,32 @@ const PapersPage: React.FC = () => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Failed to export PDF");
+      toast(err.response?.data?.detail || "Failed to export PDF", "error");
+    }
+  };
+
+  const openCoverageModal = async (paperId: number, title: string) => {
+    setCoverageModal({
+      paperId,
+      title,
+      loading: true,
+      chapter_targets: [],
+      blooms_targets: [],
+    });
+    try {
+      const { data } = await paperAPI.getCoverage(paperId);
+      setCoverageModal((prev) =>
+        prev
+          ? {
+              ...prev,
+              loading: false,
+              chapter_targets: data.chapter_targets ?? [],
+              blooms_targets: data.blooms_targets ?? [],
+            }
+          : null,
+      );
+    } catch {
+      setCoverageModal((prev) => (prev ? { ...prev, loading: false } : null));
     }
   };
 
@@ -338,6 +382,7 @@ const PapersPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <ToastContainer />
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -981,6 +1026,56 @@ const PapersPage: React.FC = () => {
                             </div>
                           </div>
                         )}
+
+                        {/* Chapter Balance (target-vs-actual) */}
+                        {assemblyResult.coverage_analysis.chapter_targets &&
+                          assemblyResult.coverage_analysis.chapter_targets
+                            .length > 0 && (
+                            <div className="space-y-2 border-t pt-3">
+                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                                <BookOpen className="h-3 w-3" />
+                                Chapter Balance
+                              </span>
+                              <div className="space-y-1.5">
+                                {assemblyResult.coverage_analysis.chapter_targets.map(
+                                  (ch) => (
+                                    <CoverageBar
+                                      key={ch.chapter_name}
+                                      label={ch.chapter_name}
+                                      actual={ch.actual}
+                                      target={ch.target}
+                                      status={ch.status}
+                                    />
+                                  ),
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                        {/* Bloom's Balance (target-vs-actual) */}
+                        {assemblyResult.coverage_analysis.blooms_targets &&
+                          assemblyResult.coverage_analysis.blooms_targets
+                            .length > 0 && (
+                            <div className="space-y-2 border-t pt-3">
+                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                                <Brain className="h-3 w-3" />
+                                Bloom's Balance
+                              </span>
+                              <div className="space-y-1.5">
+                                {assemblyResult.coverage_analysis.blooms_targets.map(
+                                  (bl) => (
+                                    <CoverageBar
+                                      key={bl.level}
+                                      label={bl.level}
+                                      actual={bl.actual}
+                                      target={bl.target}
+                                      status={bl.status}
+                                    />
+                                  ),
+                                )}
+                              </div>
+                            </div>
+                          )}
                       </CardContent>
                     </Card>
                   </div>
@@ -1048,6 +1143,15 @@ const PapersPage: React.FC = () => {
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={() => openCoverageModal(paper.id, paper.title)}
+                      className="text-xs gap-1"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      Coverage
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => exportPDF(paper.id, paper.title)}
                       className="text-xs gap-1"
                     >
@@ -1072,8 +1176,152 @@ const PapersPage: React.FC = () => {
           ))}
         </div>
       )}
+
+      {/* Coverage Modal for existing papers */}
+      {coverageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <Card className="w-full max-w-md mx-4 max-h-[80vh] overflow-y-auto">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-1.5">
+                  <Target className="h-4 w-4" />
+                  Coverage: {coverageModal.title}
+                </CardTitle>
+                <button
+                  onClick={() => setCoverageModal(null)}
+                  className="rounded p-1 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {coverageModal.loading ? (
+                <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading coverage...
+                </div>
+              ) : (
+                <>
+                  {coverageModal.chapter_targets.length > 0 && (
+                    <div className="space-y-2">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <BookOpen className="h-3 w-3" />
+                        Chapter Balance
+                      </span>
+                      <div className="space-y-1.5">
+                        {coverageModal.chapter_targets.map((ch) => (
+                          <CoverageBar
+                            key={ch.chapter_name}
+                            label={ch.chapter_name}
+                            actual={ch.actual}
+                            target={ch.target}
+                            status={ch.status}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {coverageModal.blooms_targets.length > 0 && (
+                    <div className="space-y-2">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <Brain className="h-3 w-3" />
+                        Bloom's Balance
+                      </span>
+                      <div className="space-y-1.5">
+                        {coverageModal.blooms_targets.map((bl) => (
+                          <CoverageBar
+                            key={bl.level}
+                            label={bl.level}
+                            actual={bl.actual}
+                            target={bl.target}
+                            status={bl.status}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {coverageModal.chapter_targets.length === 0 &&
+                    coverageModal.blooms_targets.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        No coverage data available. Paper may not have
+                        curriculum-linked questions.
+                      </p>
+                    )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };
+
+// ── RAG coverage bar (reusable for chapter + Bloom's targets) ──
+
+const RAG_BG: Record<string, string> = {
+  green: "bg-emerald-500",
+  amber: "bg-amber-500",
+  red: "bg-red-500",
+  empty: "bg-gray-300 dark:bg-gray-600",
+};
+
+const RAG_TXT: Record<string, string> = {
+  green: "text-emerald-600 dark:text-emerald-400",
+  amber: "text-amber-600 dark:text-amber-400",
+  red: "text-red-600 dark:text-red-400",
+  empty: "text-gray-400 dark:text-gray-500",
+};
+
+function CoverageBar({
+  label,
+  actual,
+  target,
+  status,
+}: {
+  label: string;
+  actual: number;
+  target: number;
+  status: string;
+}) {
+  const pct =
+    target > 0
+      ? Math.min(100, Math.round((actual / target) * 100))
+      : actual > 0
+        ? 100
+        : 0;
+
+  return (
+    <div className="flex items-center gap-2">
+      <span
+        className={cn(
+          "h-2 w-2 shrink-0 rounded-full",
+          RAG_BG[status] ?? RAG_BG.empty,
+        )}
+      />
+      <span className="min-w-0 flex-1 truncate text-xs">{label}</span>
+      <div className="relative h-2 w-20 shrink-0 overflow-hidden rounded-full bg-muted sm:w-24">
+        <div
+          className={cn(
+            "absolute inset-y-0 left-0 rounded-full transition-all",
+            RAG_BG[status] ?? RAG_BG.empty,
+          )}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span
+        className={cn(
+          "w-10 shrink-0 text-right text-xs tabular-nums",
+          RAG_TXT[status] ?? RAG_TXT.empty,
+        )}
+      >
+        {actual}/{target}
+      </span>
+    </div>
+  );
+}
 
 export default PapersPage;

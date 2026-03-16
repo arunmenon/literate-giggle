@@ -18,6 +18,7 @@ import {
   Users,
   Copy,
   Check,
+  Library,
 } from "lucide-react";
 
 interface NavItem {
@@ -63,6 +64,11 @@ function useNavItems(
       label: "My Questions",
       path: "/questions",
       icon: <BookOpen className="h-5 w-5" />,
+    },
+    {
+      label: "Curriculum",
+      path: "/curriculum",
+      icon: <Library className="h-5 w-5" />,
     },
     {
       label: "My Papers",
