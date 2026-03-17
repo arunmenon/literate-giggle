@@ -135,12 +135,16 @@ class AIService:
                 messages.append({"role": "system", "content": system})
             messages.append({"role": "user", "content": prompt})
 
-            response = await self._client.chat.completions.create(
-                model=resolved_model,
-                messages=messages,
-                max_tokens=resolved_max_tokens,
-                temperature=temperature,
-            )
+            kwargs: dict[str, Any] = {
+                "model": resolved_model,
+                "messages": messages,
+                "max_completion_tokens": resolved_max_tokens,
+            }
+            # GPT-5 series models only support temperature=1
+            if not resolved_model.startswith("gpt-5"):
+                kwargs["temperature"] = temperature
+
+            response = await self._client.chat.completions.create(**kwargs)
             result_text = response.choices[0].message.content
 
             if use_cache:
@@ -224,13 +228,16 @@ class AIService:
                 messages.append({"role": "system", "content": system})
             messages.append({"role": "user", "content": prompt})
 
-            response = await self._client.chat.completions.create(
-                model=resolved_model,
-                messages=messages,
-                max_tokens=resolved_max_tokens,
-                temperature=temperature,
-                stream=True,
-            )
+            kwargs: dict[str, Any] = {
+                "model": resolved_model,
+                "messages": messages,
+                "max_completion_tokens": resolved_max_tokens,
+                "stream": True,
+            }
+            if not resolved_model.startswith("gpt-5"):
+                kwargs["temperature"] = temperature
+
+            response = await self._client.chat.completions.create(**kwargs)
 
             async for chunk in response:
                 if chunk.choices and chunk.choices[0].delta.content:

@@ -22,8 +22,8 @@ class Settings(BaseSettings):
 
     # AI Configuration
     OPENAI_API_KEY: Optional[str] = None
-    AI_MODEL_FAST: str = "gpt-4.1-mini"
-    AI_MODEL_STANDARD: str = "gpt-4.1"
+    AI_MODEL_FAST: str = "gpt-5-mini"
+    AI_MODEL_STANDARD: str = "gpt-5.4"
     AI_ENABLED: bool = True
     AI_MAX_TOKENS_FAST: int = 1024
     AI_MAX_TOKENS_STANDARD: int = 4096
