@@ -17,15 +17,15 @@ from app.models.curriculum import (
 )
 
 
-CBSE_BOARD_PATTERN_2025 = (
-    "50% competency-based for 2024-25 (MCQs, case-based, assertion-reasoning). "
+CBSE_BOARD_PATTERN = (
+    "50% competency-based (MCQs, case-based, assertion-reasoning). "
     "30% constructed response. 20% traditional. "
     "Internal choice in all sections. Case-study based questions mandatory."
 )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CBSE Class 10 Mathematics -- All 14 NCERT Chapters (Ch 15 removed from 2024-25)
+# CBSE Class 10 Mathematics -- All 14 NCERT Chapters
 # ─────────────────────────────────────────────────────────────────────────────
 
 CBSE_MATH_10_CHAPTERS = [
@@ -34,7 +34,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Real Numbers",
         "textbook_reference": "NCERT Ch. 1",
         "marks_weightage": 6,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Euclid's Division Lemma", "Statement and application of Euclid's division lemma to find HCF"),
             ("Fundamental Theorem of Arithmetic", "Every composite number can be expressed as a product of primes uniquely"),
@@ -60,7 +60,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Polynomials",
         "textbook_reference": "NCERT Ch. 2",
         "marks_weightage": 7,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Zeroes of a Polynomial", "Finding zeroes and verifying using factor theorem"),
             ("Relationship between Zeroes and Coefficients", "Sum and product of zeroes for quadratic polynomials"),
@@ -86,7 +86,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Pair of Linear Equations in Two Variables",
         "textbook_reference": "NCERT Ch. 3",
         "marks_weightage": 8,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Graphical Method of Solution", "Solving by plotting lines and finding intersection"),
             ("Substitution Method", "Solving by expressing one variable in terms of another"),
@@ -113,7 +113,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Quadratic Equations",
         "textbook_reference": "NCERT Ch. 4",
         "marks_weightage": 8,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Standard Form of Quadratic Equations", "ax^2 + bx + c = 0, identifying coefficients"),
             ("Solution by Factorization", "Splitting middle term method"),
@@ -140,7 +140,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Arithmetic Progressions",
         "textbook_reference": "NCERT Ch. 5",
         "marks_weightage": 8,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Introduction to AP", "Definition, common difference, general term"),
             ("nth Term of an AP", "a_n = a + (n-1)d"),
@@ -165,7 +165,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Triangles",
         "textbook_reference": "NCERT Ch. 6",
         "marks_weightage": 8,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Similar Triangles", "Definition and criteria for similarity"),
             ("Basic Proportionality Theorem (Thales)", "If a line is drawn parallel to one side, it divides the other two proportionally"),
@@ -192,7 +192,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Coordinate Geometry",
         "textbook_reference": "NCERT Ch. 7",
         "marks_weightage": 6,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Distance Formula", "Distance between two points in coordinate plane"),
             ("Section Formula", "Internal division of a line segment in given ratio"),
@@ -218,7 +218,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Introduction to Trigonometry",
         "textbook_reference": "NCERT Ch. 8",
         "marks_weightage": 8,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Trigonometric Ratios", "sin, cos, tan, cosec, sec, cot for acute angles"),
             ("Trigonometric Ratios of Specific Angles", "Values at 0, 30, 45, 60, 90 degrees"),
@@ -243,7 +243,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Some Applications of Trigonometry",
         "textbook_reference": "NCERT Ch. 9",
         "marks_weightage": 6,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Heights and Distances", "Finding heights/distances using trigonometric ratios"),
             ("Angle of Elevation", "Angle above horizontal from observer to object"),
@@ -267,7 +267,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Circles",
         "textbook_reference": "NCERT Ch. 10",
         "marks_weightage": 4,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Tangent to a Circle", "Definition and properties of tangents"),
             ("Number of Tangents from External Point", "Two tangents from an external point are equal"),
@@ -290,7 +290,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Areas Related to Circles",
         "textbook_reference": "NCERT Ch. 11",
         "marks_weightage": 4,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Area of Circle", "A = pi*r^2"),
             ("Area of Sector", "A = (theta/360) * pi*r^2"),
@@ -314,7 +314,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Surface Areas and Volumes",
         "textbook_reference": "NCERT Ch. 12",
         "marks_weightage": 6,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Combination of Solids", "Surface area/volume of combined shapes"),
             ("Conversion of Solids", "Melting/reshaping one solid into another"),
@@ -338,7 +338,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Statistics",
         "textbook_reference": "NCERT Ch. 13",
         "marks_weightage": 8,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Mean of Grouped Data", "Direct, assumed mean, and step-deviation methods"),
             ("Median of Grouped Data", "Using cumulative frequency and formula"),
@@ -363,7 +363,7 @@ CBSE_MATH_10_CHAPTERS = [
         "name": "Probability",
         "textbook_reference": "NCERT Ch. 14",
         "marks_weightage": 5,
-        "question_pattern_notes": CBSE_BOARD_PATTERN_2025,
+        "question_pattern_notes": CBSE_BOARD_PATTERN,
         "topics": [
             ("Classical Definition of Probability", "P(E) = favorable outcomes / total outcomes"),
             ("Complementary Events", "P(E) + P(not E) = 1"),

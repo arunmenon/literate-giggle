@@ -23,19 +23,23 @@ GENERATION_SYSTEM = (
     "class level. You always provide comprehensive model answers and marking schemes."
 )
 
-BOARD_SYSTEM_PROMPTS = {
+BOARD_SYSTEM_PROMPTS_FALLBACK = {
     "CBSE": (
-        "Generate competency-based questions per CBSE 2023+ pattern. "
+        "Generate competency-based questions per the latest CBSE board exam pattern. "
         "Include application and analysis-level questions alongside knowledge-based ones. "
-        "Reference NCERT textbook. 40% of questions should be application-level. "
+        "Reference NCERT textbook. Follow the current year's question paper format. "
         "Include case-study style questions where appropriate."
     ),
     "ICSE": (
-        "Generate questions following ICSE pattern with structured and unstructured formats. "
+        "Generate questions following the latest ICSE pattern with structured and unstructured formats. "
         "Include internal choice options where appropriate. Reference Selina/Concise textbook. "
         "Questions should follow the Section A (compulsory) and Section B (choice) pattern."
     ),
 }
+
+# NOTE: These are fallbacks only. The preferred path is to use question_pattern_notes
+# from the CurriculumChapter in the taxonomy DB, which is updated per academic year
+# without requiring code changes. The fallbacks are used when no taxonomy data exists.
 
 GENERATION_PROMPT = """Generate {count} {question_type} question(s) for:
 
@@ -145,10 +149,16 @@ async def generate_questions(
         prompt = f"{prompt}\n\n**Teacher Notes:**\n{teacher_notes}"
 
     # Build board-specific system prompt
+    # Prefer question_pattern_notes from taxonomy DB (via research_context) over hardcoded fallbacks
+    # Taxonomy notes are updated per academic year without code changes
     system = GENERATION_SYSTEM
-    board_extra = BOARD_SYSTEM_PROMPTS.get(board, "")
-    if board_extra:
-        system = f"{system}\n\n{board_extra}"
+    if not research_context:
+        # No taxonomy data available -- use generic fallback (no hardcoded years)
+        board_extra = BOARD_SYSTEM_PROMPTS_FALLBACK.get(board, "")
+        if board_extra:
+            system = f"{system}\n\n{board_extra}"
+    # When research_context is provided, it already contains the taxonomy's
+    # question_pattern_notes with the current year's pattern -- no fallback needed
 
     result = await ai_service.generate_structured(
         prompt,
@@ -284,7 +294,7 @@ async def regenerate_question(
     )
 
     system = GENERATION_SYSTEM
-    board_extra = BOARD_SYSTEM_PROMPTS.get(board, "")
+    board_extra = BOARD_SYSTEM_PROMPTS_FALLBACK.get(board, "")
     if board_extra:
         system = f"{system}\n\n{board_extra}"
 
