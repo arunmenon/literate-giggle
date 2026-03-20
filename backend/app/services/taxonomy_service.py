@@ -21,6 +21,7 @@ from ..models.curriculum import (
 from ..schemas.taxonomy import (
     BankAnalyticsResponse, ChapterCoverageSchema, GapAlertSchema,
     BankCompositionSchema, ImpactAnalysisResponse,
+    HeatmapCell, CoverageHeatmapResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -271,6 +272,116 @@ async def get_bank_analytics(
         chapter_coverage=chapter_coverage,
         composition=composition,
         gap_alerts=gap_alerts,
+    )
+
+
+BLOOMS_ORDER = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
+
+
+async def get_coverage_heatmap(
+    db: AsyncSession,
+    bank_id: int,
+) -> CoverageHeatmapResponse:
+    """
+    Compute a 2D chapter x Bloom's level coverage heatmap for a question bank.
+
+    Returns chapter names as Y-axis, Bloom's levels as X-axis, and cell counts
+    with question IDs for click-to-view.
+    """
+    bank = await db.get(QuestionBank, bank_id)
+    if not bank:
+        raise ValueError(f"Bank {bank_id} not found")
+
+    # Get all active questions in this bank
+    questions_result = await db.execute(
+        select(Question).where(
+            Question.bank_id == bank_id,
+            Question.is_active == True,
+        )
+    )
+    all_questions = questions_result.scalars().all()
+    total_questions = len(all_questions)
+
+    if not all_questions:
+        return CoverageHeatmapResponse(
+            bank_id=bank_id,
+            chapters=[],
+            blooms_levels=BLOOMS_ORDER,
+            cells=[],
+            total_questions=0,
+        )
+
+    # Find matching curriculum subject for chapter resolution
+    subject_query = (
+        select(CurriculumSubject)
+        .join(Curriculum, CurriculumSubject.curriculum_id == Curriculum.id)
+        .join(Board, Curriculum.board_id == Board.id)
+        .where(
+            Board.code == bank.board,
+            CurriculumSubject.class_grade == bank.class_grade,
+            CurriculumSubject.name == bank.subject,
+        )
+    )
+    subject_result = await db.execute(subject_query)
+    curriculum_subject = subject_result.scalar_one_or_none()
+
+    # Build chapter map if curriculum exists
+    chapter_map: dict[int, str] = {}
+    if curriculum_subject:
+        chapters_result = await db.execute(
+            select(CurriculumChapter)
+            .where(CurriculumChapter.subject_id == curriculum_subject.id)
+            .order_by(CurriculumChapter.number)
+        )
+        for ch in chapters_result.scalars().all():
+            chapter_map[ch.id] = ch.name
+
+    # Group questions by (chapter_id, blooms_level)
+    # cell_data: (chapter_id, chapter_name) -> blooms_level -> list[question_id]
+    cell_data: dict[tuple[int, str], dict[str, list[int]]] = {}
+
+    for q in all_questions:
+        ch_id = q.chapter_id
+        ch_name = chapter_map.get(ch_id, "Uncategorized") if ch_id else "Uncategorized"
+
+        # Fuzzy match if no chapter_id
+        if not ch_id and q.topic and curriculum_subject:
+            matched_id = await fuzzy_match_topic_to_chapter(
+                q.topic, bank.board, bank.class_grade, bank.subject, db
+            )
+            if matched_id and matched_id in chapter_map:
+                ch_id = matched_id
+                ch_name = chapter_map[matched_id]
+
+        key = (ch_id or 0, ch_name)
+        blooms_val = q.blooms_level.value if q.blooms_level else "understand"
+
+        if key not in cell_data:
+            cell_data[key] = {bl: [] for bl in BLOOMS_ORDER}
+        if blooms_val in cell_data[key]:
+            cell_data[key][blooms_val].append(q.id)
+
+    # Build response
+    chapters_seen = []
+    cells = []
+    for (ch_id, ch_name), blooms_dict in cell_data.items():
+        if ch_name not in chapters_seen:
+            chapters_seen.append(ch_name)
+        for bl, q_ids in blooms_dict.items():
+            cells.append(HeatmapCell(
+                chapter_id=ch_id,
+                chapter_name=ch_name,
+                blooms_level=bl,
+                question_count=len(q_ids),
+                question_ids=q_ids,
+            ))
+
+    return CoverageHeatmapResponse(
+        bank_id=bank_id,
+        chapters=chapters_seen,
+        blooms_levels=BLOOMS_ORDER,
+        cells=cells,
+        total_questions=total_questions,
     )
 
 

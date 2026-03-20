@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import type {
   BankAnalytics as BankAnalyticsType,
   ChapterCoverage,
+  CoverageHeatmapResponse,
+  BankCalibrationResponse,
 } from "../types";
 import {
   Card,
@@ -31,12 +33,15 @@ import {
   BookOpen,
   ChevronDown,
   ChevronUp,
+  Grid3X3,
   Pencil,
   RefreshCw,
+  Scale,
   Sparkles,
   Target,
   TrendingUp,
 } from "lucide-react";
+import { CoverageHeatmap } from "./CoverageHeatmap";
 
 // ── RAG colors ──
 
@@ -72,6 +77,16 @@ export interface BankAnalyticsProps {
   onCreateCurriculum: () => void;
   onRetry: () => void;
   onEditChapter?: (chapterId: number, chapterName: string) => void;
+  // Heatmap
+  heatmapData?: CoverageHeatmapResponse | null;
+  heatmapLoading?: boolean;
+  heatmapError?: string | null;
+  onHeatmapCellClick?: (chapterId: number, bloomsLevel: string, questionIds: number[]) => void;
+  onHeatmapFillGap?: (chapterId: number, bloomsLevel: string) => void;
+  // Calibration
+  calibrationData?: BankCalibrationResponse | null;
+  calibrationLoading?: boolean;
+  onUpdateDifficulty?: (questionId: number, newDifficulty: string) => void;
 }
 
 // ── Skeleton loader ──
@@ -101,6 +116,11 @@ function AnalyticsSkeleton() {
 
 // ── Main component ──
 
+const MISMATCH_LABELS: Record<string, string> = {
+  easier_than_marked: "easier",
+  harder_than_marked: "harder",
+};
+
 const BankAnalytics: React.FC<BankAnalyticsProps> = ({
   analytics,
   loading,
@@ -110,8 +130,18 @@ const BankAnalytics: React.FC<BankAnalyticsProps> = ({
   onCreateCurriculum,
   onRetry,
   onEditChapter,
+  heatmapData,
+  heatmapLoading,
+  heatmapError,
+  onHeatmapCellClick,
+  onHeatmapFillGap,
+  calibrationData,
+  calibrationLoading,
+  onUpdateDifficulty,
 }) => {
   const [compositionOpen, setCompositionOpen] = useState(false);
+  const [heatmapOpen, setHeatmapOpen] = useState(false);
+  const [calibrationOpen, setCalibrationOpen] = useState(false);
 
   if (loading) return <AnalyticsSkeleton />;
 
@@ -355,6 +385,139 @@ const BankAnalytics: React.FC<BankAnalyticsProps> = ({
             })}
           </div>
         </div>
+
+        {/* Coverage Heatmap (collapsible) */}
+        {(heatmapData || heatmapLoading || heatmapError) && (
+          <div className="border-t pt-3">
+            <button
+              className="flex w-full items-center justify-between text-xs font-medium text-muted-foreground uppercase tracking-wide transition-colors hover:text-foreground"
+              onClick={() => setHeatmapOpen((v) => !v)}
+            >
+              <span className="flex items-center gap-1.5">
+                <Grid3X3 className="h-3 w-3" />
+                Coverage Heatmap
+              </span>
+              {heatmapOpen ? (
+                <ChevronUp className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" />
+              )}
+            </button>
+
+            {heatmapOpen && (
+              <div className="mt-3">
+                <CoverageHeatmap
+                  data={heatmapData ?? null}
+                  loading={heatmapLoading ?? false}
+                  error={heatmapError ?? null}
+                  onCellClick={onHeatmapCellClick ?? (() => {})}
+                  onFillGap={onHeatmapFillGap ?? (() => {})}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Calibration Alerts (collapsible) */}
+        {(calibrationData || calibrationLoading) && (
+          <div className="border-t pt-3">
+            <button
+              className="flex w-full items-center justify-between text-xs font-medium text-muted-foreground uppercase tracking-wide transition-colors hover:text-foreground"
+              onClick={() => setCalibrationOpen((v) => !v)}
+            >
+              <span className="flex items-center gap-1.5">
+                <Scale className="h-3 w-3" />
+                Calibration Alerts
+                {calibrationData && calibrationData.total_mismatches > 0 && (
+                  <Badge
+                    variant="warning"
+                    className="ml-1 text-[10px] px-1.5 py-0"
+                  >
+                    {calibrationData.total_mismatches}
+                  </Badge>
+                )}
+              </span>
+              {calibrationOpen ? (
+                <ChevronUp className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" />
+              )}
+            </button>
+
+            {calibrationOpen && (
+              <div className="mt-3 space-y-2">
+                {calibrationLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3].map((i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
+                ) : calibrationData &&
+                  calibrationData.calibrations.filter((c) => c.mismatch)
+                    .length > 0 ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      {calibrationData.total_mismatches} question
+                      {calibrationData.total_mismatches !== 1 ? "s" : ""} with
+                      difficulty mismatch (of {calibrationData.total_calibrated}{" "}
+                      calibrated)
+                    </p>
+                    <div className="grid gap-2">
+                      {calibrationData.calibrations
+                        .filter((c) => c.mismatch)
+                        .map((cal) => (
+                          <div
+                            key={cal.question_id}
+                            className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/40 dark:bg-amber-950/30"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+                                Question #{cal.question_id}
+                              </p>
+                              <p className="text-xs text-amber-600 dark:text-amber-400">
+                                Marked{" "}
+                                <span className="font-medium">
+                                  {cal.assigned_difficulty}
+                                </span>
+                                , actually{" "}
+                                <span className="font-medium">
+                                  {cal.empirical_difficulty}
+                                </span>{" "}
+                                &middot; {cal.sample_size} attempts &middot; avg{" "}
+                                {Math.round(cal.empirical_score * 100)}%
+                              </p>
+                            </div>
+                            {onUpdateDifficulty && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="ml-2 shrink-0 text-xs text-amber-600 hover:bg-amber-100 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-amber-900/40"
+                                onClick={() =>
+                                  onUpdateDifficulty(
+                                    cal.question_id,
+                                    cal.empirical_difficulty,
+                                  )
+                                }
+                              >
+                                Update to {cal.empirical_difficulty}
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground py-2">
+                    No difficulty mismatches detected
+                    {calibrationData
+                      ? ` (${calibrationData.total_calibrated} calibrated)`
+                      : ""}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Composition (collapsible) */}
         <div className="border-t pt-3">

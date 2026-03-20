@@ -227,3 +227,43 @@ class PaperCoverageAnalysis(BaseModel):
     chapter_distribution: dict[str, int] = {}
     chapter_targets: list[PaperChapterTarget] = []
     blooms_targets: list[PaperBloomsTarget] = []
+
+
+# ── Coverage Heatmap ──
+
+
+class HeatmapCell(BaseModel):
+    chapter_id: int
+    chapter_name: str
+    blooms_level: str
+    question_count: int
+    question_ids: list[int] = []
+
+
+class CoverageHeatmapResponse(BaseModel):
+    bank_id: int
+    chapters: list[str] = []  # Y-axis labels
+    blooms_levels: list[str] = []  # X-axis labels (ordered: remember -> create)
+    cells: list[HeatmapCell] = []
+    total_questions: int = 0
+
+
+# ── Difficulty Calibration ──
+
+
+class DifficultyCalibrationResponse(BaseModel):
+    question_id: int
+    assigned_difficulty: str
+    empirical_difficulty: str
+    empirical_score: float  # 0.0-1.0 (lower = harder)
+    sample_size: int
+    confidence: str  # "low" (<5), "medium" (5-20), "high" (>20)
+    mismatch: bool
+    mismatch_direction: Optional[str] = None  # "easier_than_marked" or "harder_than_marked"
+
+
+class DifficultyCalibrationBankResponse(BaseModel):
+    bank_id: int
+    calibrations: list[DifficultyCalibrationResponse] = []
+    total_calibrated: int = 0
+    total_mismatches: int = 0

@@ -49,6 +49,7 @@ class QuestionCreate(BaseModel):
     correct_option: Optional[str] = None
     marking_scheme: Optional[list[dict]] = None
     source: Optional[str] = None
+    question_image_url: Optional[str] = None
 
 
 class QuestionResponse(BaseModel):
@@ -62,10 +63,16 @@ class QuestionResponse(BaseModel):
     topic: str
     subtopic: Optional[str]
     model_answer: Optional[str] = None
+    answer_keywords: Optional[list[str]] = None
     mcq_options: Optional[dict] = None
+    correct_option: Optional[str] = None
+    marking_scheme: Optional[list[dict]] = None
     source: Optional[str]
+    question_image_url: Optional[str] = None
     times_used: int
     avg_score_pct: Optional[float]
+    blooms_confidence: Optional[float] = None
+    blooms_teacher_confirmed: bool = False
     created_at: datetime
 
     class Config:
@@ -120,6 +127,9 @@ class GeneratedQuestionResponse(BaseModel):
     correct_option: Optional[str] = None
     marking_scheme: Optional[list[dict]] = None
     source: Optional[str] = None
+    blooms_confidence: Optional[float] = None
+    generation_context: Optional[str] = None
+    question_image_url: Optional[str] = None
 
 
 class GenerateResponse(BaseModel):
@@ -143,6 +153,7 @@ class ApproveQuestionItem(BaseModel):
     correct_option: Optional[str] = None
     marking_scheme: Optional[list[dict]] = None
     source: Optional[str] = None
+    question_image_url: Optional[str] = None
     # Taxonomy FK
     chapter_id: Optional[int] = None
     # Provenance fields
@@ -227,6 +238,8 @@ class SubmitAnswerRequest(BaseModel):
     paper_question_id: int
     answer_text: Optional[str] = None
     selected_option: Optional[str] = None
+    answer_image_url: Optional[str] = None
+    canvas_state: Optional[dict] = None
 
 
 class AutoSaveRequest(BaseModel):
@@ -253,6 +266,30 @@ class ExamSessionResponse(BaseModel):
 class ExamSessionDetail(ExamSessionResponse):
     paper: QuestionPaperResponse
     answers: list[dict] = []
+
+
+# ── Cross-Workspace Exam Views ──
+
+
+class CrossWorkspaceExam(BaseModel):
+    """An exam assignment enriched with workspace/teacher/class attribution."""
+    assignment_id: int
+    paper_id: int
+    paper_title: str
+    subject: str
+    total_marks: float
+    duration_minutes: int
+    class_id: int
+    class_name: str
+    workspace_id: int
+    workspace_name: str
+    teacher_name: Optional[str] = None
+    color: str = "#3B82F6"
+    status: str
+    label: Optional[str] = None
+    start_at: Optional[datetime] = None
+    end_at: Optional[datetime] = None
+    is_practice: bool = False
 
 
 # ── Curriculum Registry ──

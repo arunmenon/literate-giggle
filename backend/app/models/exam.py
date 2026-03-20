@@ -108,6 +108,9 @@ class Question(Base):
     teacher_edited = Column(Boolean, default=False)  # Whether teacher modified AI output
     quality_rating = Column(Integer, nullable=True)  # 1-5 star rating from teacher
     generation_context = Column(Text, nullable=True)  # JSON: research context used for generation
+    # Bloom's confidence (Phase 3)
+    blooms_confidence = Column(Float, nullable=True)  # 0.0-1.0 confidence in blooms_level assignment
+    blooms_teacher_confirmed = Column(Boolean, default=False)  # True when teacher confirms/changes blooms
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     bank = relationship("QuestionBank", back_populates="questions")
@@ -213,6 +216,7 @@ class StudentAnswer(Base):
     paper_question_id = Column(Integer, ForeignKey("paper_questions.id"), nullable=False)
     answer_text = Column(Text)
     answer_image_url = Column(String(500))  # For handwritten / diagram answers
+    canvas_state = Column(JSON, nullable=True)  # Excalidraw JSON for diagram answer resumability
     selected_option = Column(String(10))  # For MCQ
     time_spent_seconds = Column(Integer, default=0)
     is_flagged = Column(Boolean, default=False)  # Student flagged for review
