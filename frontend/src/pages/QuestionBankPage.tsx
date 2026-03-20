@@ -54,6 +54,12 @@ import {
 } from "../components/QuestionFilters";
 import { TaxonomyCreator } from "../components/TaxonomyCreator";
 import { ImpactAnalysis } from "../components/ImpactAnalysis";
+import { MathText } from "../components/MathText";
+import { DiagramRenderer } from "../components/DiagramRenderer";
+import {
+  VoiceDictation,
+  type DictationIntent,
+} from "../components/VoiceDictation";
 import { cn } from "../lib/utils";
 import {
   BookOpen,
@@ -75,6 +81,8 @@ import {
   X,
   Pencil,
   Loader2,
+  ImageIcon,
+  RefreshCw,
 } from "lucide-react";
 
 const BOARDS = ["CBSE", "ICSE", "State Board"];
@@ -262,6 +270,12 @@ const QuestionBankPage: React.FC = () => {
     correct_option: "a",
   });
 
+  // Question image upload state
+  const [questionImageFile, setQuestionImageFile] = useState<File | null>(null);
+  const [questionImagePreview, setQuestionImagePreview] = useState<string | null>(null);
+  const [uploadingQuestionImage, setUploadingQuestionImage] = useState(false);
+  const questionImageInputRef = useRef<HTMLInputElement>(null);
+
   // Adaptive generation flow state
   const [genStep, setGenStep] = useState<
     "select" | "research" | "configure" | "generate" | "review"
@@ -309,6 +323,18 @@ const QuestionBankPage: React.FC = () => {
   );
   const [generating, setGenerating] = useState(false);
   const [approving, setApproving] = useState(false);
+
+  // Diagram generation state (FR-001 Phase 2)
+  const [diagramGenQuestionId, setDiagramGenQuestionId] = useState<number | null>(null);
+  const [diagramGenerating, setDiagramGenerating] = useState(false);
+  const [diagramResult, setDiagramResult] = useState<{
+    svg_url: string | null;
+    renderer_used: string;
+    client_params: { syntax: string } | null;
+    alt_text: string;
+  } | null>(null);
+  const [diagramAccepting, setDiagramAccepting] = useState(false);
+  const [diagramError, setDiagramError] = useState<string | null>(null);
 
   useEffect(() => {
     questionAPI.listBanks().then((res) => {
@@ -539,7 +565,18 @@ const QuestionBankPage: React.FC = () => {
       payload.correct_option = qForm.correct_option;
     }
     const { data } = await questionAPI.create(payload);
+    // Upload image if one was selected
+    if (questionImageFile && data.id) {
+      try {
+        const imgRes = await questionAPI.uploadImage(data.id, questionImageFile);
+        data.question_image_url = imgRes.data.image_url;
+      } catch {
+        // Question created successfully, image upload failed silently
+      }
+    }
     setQuestions([data, ...questions]);
+    setQuestionImageFile(null);
+    setQuestionImagePreview(null);
     setShowQForm(false);
   };
 
@@ -832,6 +869,34 @@ const QuestionBankPage: React.FC = () => {
   };
 
   // Pre-fill and reset generation flow when panel is opened
+  // Voice dictation handler -- pre-fills generation form from parsed intent
+  const handleVoiceIntent = useCallback(
+    (intent: DictationIntent) => {
+      // Pre-fill generation config from voice intent
+      setGenConfig((prev) => ({
+        ...prev,
+        ...(intent.difficulty ? { difficulty: intent.difficulty } : {}),
+        ...(intent.question_type
+          ? { question_type: intent.question_type }
+          : {}),
+        ...(intent.count != null ? { count: intent.count } : {}),
+      }));
+
+      // Open the generation panel if not already open
+      if (!showGenPanel) {
+        setShowGenPanel(true);
+        setGeneratedQuestions([]);
+        setReviewStatuses(new Map());
+        setReviewRatings(new Map());
+        setRegenCounts(new Map());
+      }
+
+      // Move to configure step so the teacher sees the pre-filled form
+      setGenStep("configure");
+    },
+    [showGenPanel],
+  );
+
   const openGenPanel = () => {
     setCurriculumSelection(null);
     setResearchResult(null);
@@ -847,6 +912,61 @@ const QuestionBankPage: React.FC = () => {
     setLastUploadResult(null);
     setUploadedDocs([]);
     setUploadContentType("textbook");
+  };
+
+  // Diagram generation handlers (FR-001 Phase 2)
+  const handleGenerateDiagram = async (question: Question) => {
+    if (!selectedBankData) return;
+    setDiagramGenQuestionId(question.id);
+    setDiagramGenerating(true);
+    setDiagramResult(null);
+    setDiagramError(null);
+    try {
+      const { data } = await questionAPI.generateDiagram(question.id, {
+        subject: selectedBankData.subject,
+        topic: question.topic,
+        question_text: question.question_text,
+      });
+      setDiagramResult(data);
+    } catch (err: any) {
+      setDiagramError(
+        err.response?.data?.detail || "Diagram generation failed",
+      );
+    } finally {
+      setDiagramGenerating(false);
+    }
+  };
+
+  const handleAcceptDiagram = async (questionId: number) => {
+    if (!diagramResult?.svg_url) return;
+    setDiagramAccepting(true);
+    try {
+      const { data } = await questionAPI.acceptDiagram(questionId, {
+        svg_url: diagramResult.svg_url,
+        alt_text: diagramResult.alt_text,
+      });
+      // Update the question in local state
+      setQuestions((prev) =>
+        prev.map((q) =>
+          q.id === questionId
+            ? { ...q, question_image_url: data.question_image_url }
+            : q,
+        ),
+      );
+      toast("Diagram saved to question", "success");
+      setDiagramGenQuestionId(null);
+      setDiagramResult(null);
+    } catch (err: any) {
+      toast(err.response?.data?.detail || "Failed to save diagram", "error");
+    } finally {
+      setDiagramAccepting(false);
+    }
+  };
+
+  const handleRejectDiagram = () => {
+    setDiagramGenQuestionId(null);
+    setDiagramResult(null);
+    setDiagramError(null);
   };
 
   const getDifficultyVariant = (difficulty: string) => {
@@ -1031,6 +1151,7 @@ const QuestionBankPage: React.FC = () => {
               >
                 or add manually
               </button>
+              <VoiceDictation onIntentParsed={handleVoiceIntent} />
               <Button onClick={openGenPanel} className="gap-2">
                 <Sparkles className="h-4 w-4" />
                 Generate Questions
@@ -1833,6 +1954,55 @@ const QuestionBankPage: React.FC = () => {
                       setQForm({ ...qForm, answer_keywords: e.target.value })
                     }
                   />
+                  {/* Question Image Upload */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-muted-foreground">
+                      Question Image (optional)
+                    </label>
+                    {questionImagePreview ? (
+                      <div className="relative inline-block">
+                        <img
+                          src={questionImagePreview}
+                          alt="Question image preview"
+                          className="max-h-48 rounded-lg border border-border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuestionImageFile(null);
+                            setQuestionImagePreview(null);
+                          }}
+                          className="absolute -top-2 -right-2 rounded-full bg-destructive text-destructive-foreground p-1 hover:bg-destructive/90"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => questionImageInputRef.current?.click()}
+                        className="flex items-center gap-3 px-4 py-3 rounded-lg border border-dashed border-border cursor-pointer hover:border-primary/50 hover:bg-muted/50 transition-colors"
+                      >
+                        <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-sm text-muted-foreground">
+                          Click to upload a diagram or figure (PNG, JPG, SVG, WebP)
+                        </span>
+                      </div>
+                    )}
+                    <input
+                      ref={questionImageInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setQuestionImageFile(file);
+                          setQuestionImagePreview(URL.createObjectURL(file));
+                        }
+                      }}
+                    />
+                  </div>
+
                   <div className="flex gap-2">
                     <Button type="submit">Add Question</Button>
                     <Button
@@ -1939,12 +2109,119 @@ const QuestionBankPage: React.FC = () => {
                                   </div>
                                 )}
                               </div>
-                              <p className="text-sm leading-relaxed">
-                                {q.question_text}
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {q.topic}
-                              </p>
+                              <MathText text={q.question_text} as="p" className="text-sm leading-relaxed" />
+                              {q.question_image_url && (
+                                <div className="mt-2">
+                                  <img
+                                    src={q.question_image_url}
+                                    alt="Question diagram"
+                                    className="max-w-full rounded-lg border border-border cursor-pointer hover:opacity-90 transition-opacity"
+                                    style={{ maxHeight: "200px" }}
+                                    onClick={() => window.open(q.question_image_url!, "_blank")}
+                                  />
+                                </div>
+                              )}
+                              <div className="flex items-center gap-2 mt-1">
+                                <p className="text-xs text-muted-foreground">
+                                  {q.topic}
+                                </p>
+                                {!q.question_image_url && diagramGenQuestionId !== q.id && (
+                                  <button
+                                    onClick={() => handleGenerateDiagram(q)}
+                                    className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+                                  >
+                                    <Wand2 className="h-3 w-3" />
+                                    Generate Diagram
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Diagram generation panel */}
+                              {diagramGenQuestionId === q.id && (
+                                <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
+                                  {diagramGenerating && (
+                                    <div className="flex items-center gap-2 py-4 justify-center">
+                                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                      <span className="text-sm text-muted-foreground">
+                                        Generating diagram...
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {diagramError && (
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-sm text-destructive">{diagramError}</p>
+                                      <div className="flex gap-2">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => handleGenerateDiagram(q)}
+                                        >
+                                          <RefreshCw className="h-3 w-3 mr-1" />
+                                          Retry
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={handleRejectDiagram}
+                                        >
+                                          Cancel
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {diagramResult && !diagramGenerating && (
+                                    <>
+                                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                        <Sparkles className="h-3 w-3" />
+                                        AI-generated diagram ({diagramResult.renderer_used})
+                                      </div>
+                                      <DiagramRenderer
+                                        svgUrl={diagramResult.svg_url ?? undefined}
+                                        mermaidSyntax={
+                                          diagramResult.renderer_used === "mermaid" && diagramResult.client_params?.syntax
+                                            ? diagramResult.client_params.syntax
+                                            : undefined
+                                        }
+                                        altText={diagramResult.alt_text}
+                                        className="max-h-64 overflow-auto"
+                                      />
+                                      <div className="flex items-center gap-2">
+                                        <Button
+                                          size="sm"
+                                          onClick={() => handleAcceptDiagram(q.id)}
+                                          disabled={diagramAccepting || !diagramResult.svg_url}
+                                        >
+                                          {diagramAccepting ? (
+                                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                          ) : (
+                                            <CheckCircle className="h-3 w-3 mr-1" />
+                                          )}
+                                          Accept
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => handleGenerateDiagram(q)}
+                                          disabled={diagramGenerating}
+                                        >
+                                          <RefreshCw className="h-3 w-3 mr-1" />
+                                          Regenerate
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={handleRejectDiagram}
+                                        >
+                                          <XCircle className="h-3 w-3 mr-1" />
+                                          Reject
+                                        </Button>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </CardContent>

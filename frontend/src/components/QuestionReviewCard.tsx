@@ -1,13 +1,16 @@
 import React, { useState, useMemo } from "react";
-import type { GeneratedQuestion } from "../types";
+import type { GeneratedQuestion, DifficultyCalibration } from "../types";
 import { Badge, Button, Input, Textarea, Select } from "./ui";
+import { MathText } from "./MathText";
 import { cn } from "../lib/utils";
 import {
+  AlertTriangle,
   CheckCircle,
   XCircle,
   ChevronDown,
   ChevronRight,
   Brain,
+  ShieldCheck,
   Sparkles,
   Star,
   RefreshCw,
@@ -26,6 +29,8 @@ export interface ReviewQuestionData extends GeneratedQuestion {
   edited_mcq_options?: Record<string, string>;
   edited_correct_option?: string;
   edited_answer_keywords?: string[];
+  // Teacher confirmation tracking (set when blooms is changed in review)
+  _blooms_teacher_confirmed?: boolean;
 }
 
 interface QuestionReviewCardProps {
@@ -39,6 +44,7 @@ interface QuestionReviewCardProps {
   onQuestionEdit: (index: number, updates: Partial<ReviewQuestionData>) => void;
   onRegenerate: (index: number, feedback: string) => void;
   onRatingChange: (index: number, rating: number) => void;
+  calibration?: DifficultyCalibration | null;
 }
 
 const DIFFICULTIES = [
@@ -62,6 +68,43 @@ function getDifficultyVariant(difficulty: string) {
   return "destructive" as const;
 }
 
+function getBloomsConfidenceBadge(
+  confidence: number | null | undefined,
+  teacherConfirmed: boolean,
+): { label: string; className: string; icon: React.ReactNode } | null {
+  if (teacherConfirmed) {
+    return {
+      label: "Verified",
+      className:
+        "border-blue-300 text-blue-700 bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:bg-blue-950/40",
+      icon: <ShieldCheck className="h-3 w-3 mr-0.5" />,
+    };
+  }
+  if (confidence == null) return null;
+  if (confidence >= 0.7) {
+    return {
+      label: "High confidence",
+      className:
+        "border-emerald-300 text-emerald-700 bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:bg-emerald-950/40",
+      icon: null,
+    };
+  }
+  if (confidence >= 0.4) {
+    return {
+      label: "Medium confidence",
+      className:
+        "border-amber-300 text-amber-700 bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:bg-amber-950/40",
+      icon: null,
+    };
+  }
+  return {
+    label: "Low confidence",
+    className:
+      "border-red-300 text-red-700 bg-red-50 dark:border-red-800 dark:text-red-300 dark:bg-red-950/40",
+    icon: null,
+  };
+}
+
 function QuestionReviewCard({
   question,
   index,
@@ -73,6 +116,7 @@ function QuestionReviewCard({
   onQuestionEdit,
   onRegenerate,
   onRatingChange,
+  calibration,
 }: QuestionReviewCardProps) {
   const [expanded, setExpanded] = useState(mode !== "auto");
   const [showFeedback, setShowFeedback] = useState(false);
@@ -90,6 +134,22 @@ function QuestionReviewCard({
     question.edited_correct_option ?? question.correct_option;
   const currentKeywords =
     question.edited_answer_keywords ?? question.answer_keywords;
+
+  // Bloom's confidence
+  const isTeacherConfirmed =
+    question._blooms_teacher_confirmed ??
+    question.blooms_teacher_confirmed ??
+    false;
+  const bloomsConfidence = isTeacherConfirmed
+    ? 1.0
+    : (question.blooms_confidence ?? null);
+  const confidenceBadge = getBloomsConfidenceBadge(
+    bloomsConfidence,
+    isTeacherConfirmed,
+  );
+
+  // Difficulty calibration mismatch
+  const hasMismatch = calibration?.mismatch === true;
 
   const isEdited = useMemo(() => {
     return (
@@ -174,6 +234,26 @@ function QuestionReviewCard({
                   {currentBlooms}
                 </Badge>
               )}
+              {confidenceBadge && (
+                <Badge
+                  variant="outline"
+                  className={cn("text-xs", confidenceBadge.className)}
+                >
+                  {confidenceBadge.icon}
+                  {confidenceBadge.label}
+                </Badge>
+              )}
+              {hasMismatch && calibration && (
+                <Badge
+                  variant="outline"
+                  className="text-xs border-orange-300 text-orange-700 bg-orange-50 dark:border-orange-800 dark:text-orange-300 dark:bg-orange-950/40"
+                  title={`Based on ${calibration.sample_size} student attempts, avg score ${Math.round(calibration.empirical_score * 100)}%`}
+                >
+                  <AlertTriangle className="h-3 w-3 mr-0.5" />
+                  Marked {calibration.assigned_difficulty}, actual{" "}
+                  {calibration.empirical_difficulty}
+                </Badge>
+              )}
               {isEdited && (
                 <Badge
                   variant="outline"
@@ -197,7 +277,20 @@ function QuestionReviewCard({
             </div>
 
             {/* Question Text */}
-            <p className="text-sm leading-relaxed">{currentText}</p>
+            <MathText text={currentText} as="p" className="text-sm leading-relaxed" />
+
+            {/* Question Image */}
+            {question.question_image_url && (
+              <div className="mt-3">
+                <img
+                  src={question.question_image_url}
+                  alt="Question diagram"
+                  className="max-w-full rounded-lg border border-border cursor-pointer hover:opacity-90 transition-opacity"
+                  style={{ maxHeight: "300px" }}
+                  onClick={() => window.open(question.question_image_url!, "_blank")}
+                />
+              </div>
+            )}
 
             {/* MCQ Options (always visible in collapsed) */}
             {currentMcqOptions && !expanded && (
@@ -212,7 +305,7 @@ function QuestionReviewCard({
                         : "bg-muted text-muted-foreground",
                     )}
                   >
-                    <strong>{key.toUpperCase()}.</strong> {val}
+                    <strong>{key.toUpperCase()}.</strong> <MathText text={val} />
                     {key === currentCorrectOption && (
                       <CheckCircle className="h-3 w-3 inline ml-1" />
                     )}
@@ -285,6 +378,12 @@ function QuestionReviewCard({
                   "border-amber-300 dark:border-amber-700",
               )}
             />
+            {/\\\(|\\?\$\$|\\\[/.test(currentText) && (
+              <div className="rounded-md border border-dashed p-2 bg-muted/30">
+                <p className="text-[10px] text-muted-foreground mb-1 uppercase tracking-wider">Preview</p>
+                <MathText text={currentText} as="div" className="text-sm" />
+              </div>
+            )}
           </div>
 
           {/* Editable Model Answer */}
@@ -305,6 +404,12 @@ function QuestionReviewCard({
                   "border-amber-300 dark:border-amber-700",
               )}
             />
+            {/\\\(|\\?\$\$|\\\[/.test(currentAnswer) && (
+              <div className="rounded-md border border-dashed p-2 bg-muted/30">
+                <p className="text-[10px] text-muted-foreground mb-1 uppercase tracking-wider">Preview</p>
+                <MathText text={currentAnswer} as="div" className="text-sm" />
+              </div>
+            )}
           </div>
 
           {/* Editable Marks, Difficulty, Bloom's */}
@@ -349,6 +454,7 @@ function QuestionReviewCard({
                 onChange={(e) =>
                   onQuestionEdit(index, {
                     edited_blooms_level: e.target.value,
+                    _blooms_teacher_confirmed: true,
                   })
                 }
                 options={BLOOMS_LEVELS}

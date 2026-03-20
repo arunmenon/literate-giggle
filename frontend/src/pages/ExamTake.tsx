@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback, Suspense } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { examAPI, paperAPI, aiAPI } from "../services/api";
 import type {
@@ -22,6 +22,7 @@ import {
   useToast,
 } from "../components/ui";
 import { cn } from "../lib/utils";
+import { MathText } from "../components/MathText";
 import {
   Clock,
   Flag,
@@ -35,6 +36,11 @@ import {
   Brain,
   Target,
 } from "lucide-react";
+import VoiceNavigation from "../components/VoiceNavigation";
+import { useConsentStatus } from "../hooks/useConsentStatus";
+
+// Lazy-load Excalidraw canvas (~1.5MB) - only loaded when a diagram question is shown
+const DiagramCanvas = React.lazy(() => import("../components/DiagramCanvas"));
 
 const ExamTake: React.FC = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -60,6 +66,9 @@ const ExamTake: React.FC = () => {
   // Dialog/Toast
   const { confirm, ConfirmDialogComponent } = useConfirmDialog();
   const { toast, ToastContainer } = useToast();
+
+  // Voice navigation consent
+  const { isVoiceEnabled } = useConsentStatus();
 
   // Track which questions had hints used
   const hintUsedQuestions = new Set(Object.keys(hints).map(Number));
@@ -111,6 +120,8 @@ const ExamTake: React.FC = () => {
       paper_question_id: Number(pqId),
       answer_text: ans.answer_text,
       selected_option: ans.selected_option,
+      answer_image_url: ans.answer_image_url,
+      canvas_state: ans.canvas_state,
     }));
     if (answerList.length === 0) return;
     examAPI
@@ -220,6 +231,67 @@ const ExamTake: React.FC = () => {
     }
   };
 
+  // Diagram canvas: save drawing (export PNG + upload + store state)
+  const handleDiagramSave = useCallback(
+    async (state: object, imageBlob: Blob) => {
+      if (!sessionId) return;
+      const pqId = questions[currentIdx]?.paper_question_id;
+      if (!pqId) return;
+
+      // Store canvas state locally immediately
+      setAnswers((prev) => ({
+        ...prev,
+        [pqId]: {
+          ...prev[pqId],
+          paper_question_id: pqId,
+          canvas_state: state,
+        },
+      }));
+
+      // Upload the PNG blob as answer image
+      try {
+        const { data } = await examAPI.uploadAnswerImage(
+          Number(sessionId),
+          pqId,
+          imageBlob,
+        );
+        setAnswers((prev) => ({
+          ...prev,
+          [pqId]: {
+            ...prev[pqId],
+            paper_question_id: pqId,
+            answer_image_url: data.image_url,
+            canvas_state: state,
+          },
+        }));
+        toast("Drawing saved", "success");
+      } catch (err: any) {
+        toast(
+          err.response?.data?.detail || "Failed to upload drawing",
+          "error",
+        );
+      }
+    },
+    [sessionId, questions, currentIdx, toast],
+  );
+
+  // Diagram canvas: auto-save canvas JSON state (no image export)
+  const handleDiagramAutoSave = useCallback(
+    (state: object) => {
+      const pqId = questions[currentIdx]?.paper_question_id;
+      if (!pqId) return;
+      setAnswers((prev) => ({
+        ...prev,
+        [pqId]: {
+          ...prev[pqId],
+          paper_question_id: pqId,
+          canvas_state: state,
+        },
+      }));
+    },
+    [questions, currentIdx],
+  );
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -254,7 +326,8 @@ const ExamTake: React.FC = () => {
   const answeredCount = questions.filter(
     (q) =>
       !!answers[q.paper_question_id]?.answer_text ||
-      !!answers[q.paper_question_id]?.selected_option,
+      !!answers[q.paper_question_id]?.selected_option ||
+      !!answers[q.paper_question_id]?.canvas_state,
   ).length;
   const progressPct = Math.round((answeredCount / questions.length) * 100);
 
@@ -402,8 +475,21 @@ const ExamTake: React.FC = () => {
 
               {/* Question text */}
               <div className="text-base leading-relaxed mb-6">
-                {currentQ.question_text}
+                <MathText text={currentQ.question_text} as="div" />
               </div>
+
+              {/* Question image (diagram) */}
+              {currentQ.question_image_url && (
+                <div className="mb-6">
+                  <img
+                    src={currentQ.question_image_url}
+                    alt="Question diagram"
+                    className="max-w-full rounded-lg border border-border cursor-pointer hover:opacity-90 transition-opacity"
+                    style={{ maxHeight: "300px" }}
+                    onClick={() => window.open(currentQ.question_image_url!, "_blank")}
+                  />
+                </div>
+              )}
 
               {/* Answer input */}
               {currentQ.question_type === "mcq" && currentQ.mcq_options ? (
@@ -441,9 +527,41 @@ const ExamTake: React.FC = () => {
                       >
                         {key.toUpperCase()}
                       </div>
-                      <span className="text-sm">{val}</span>
+                      <MathText text={val as string} className="text-sm" />
                     </label>
                   ))}
+                </div>
+              ) : currentQ.question_type === "diagram" ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Badge variant="outline" className="text-xs">Drawing Canvas</Badge>
+                    <span>Use the tools below to draw your diagram answer</span>
+                  </div>
+                  <Suspense
+                    fallback={
+                      <Skeleton className="h-[500px] w-full rounded-lg" />
+                    }
+                  >
+                    <DiagramCanvas
+                      key={currentQ.paper_question_id}
+                      initialState={currentAnswer?.canvas_state || undefined}
+                      onSave={handleDiagramSave}
+                      onAutoSave={handleDiagramAutoSave}
+                    />
+                  </Suspense>
+                  {/* Optional text annotation alongside diagram */}
+                  <Textarea
+                    value={currentAnswer?.answer_text || ""}
+                    onChange={(e) =>
+                      updateAnswer(
+                        currentQ.paper_question_id,
+                        "answer_text",
+                        e.target.value,
+                      )
+                    }
+                    placeholder="Add labels or notes about your diagram (optional)..."
+                    className="resize-y min-h-[60px]"
+                  />
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -573,9 +691,7 @@ const ExamTake: React.FC = () => {
                         -{hint.marks_penalty_pct}% marks
                       </span>
                     </div>
-                    <p className="text-muted-foreground leading-relaxed">
-                      {hint.hint}
-                    </p>
+                    <MathText text={hint.hint} as="p" className="text-muted-foreground leading-relaxed" />
                   </div>
                 ))}
               </CardContent>
@@ -594,7 +710,8 @@ const ExamTake: React.FC = () => {
                 {questions.map((q, i) => {
                   const answered =
                     !!answers[q.paper_question_id]?.answer_text ||
-                    !!answers[q.paper_question_id]?.selected_option;
+                    !!answers[q.paper_question_id]?.selected_option ||
+                    !!answers[q.paper_question_id]?.canvas_state;
                   const flagged = answers[q.paper_question_id]?.is_flagged;
                   const hasHints = hintUsedQuestions.has(q.paper_question_id);
 
@@ -659,6 +776,17 @@ const ExamTake: React.FC = () => {
           </Card>
         </div>
       </div>
+
+      {/* Voice Navigation — floating mic for hands-free exam control */}
+      <VoiceNavigation
+        onNext={() => setCurrentIdx((i) => Math.min(questions.length - 1, i + 1))}
+        onPrevious={() => setCurrentIdx((i) => Math.max(0, i - 1))}
+        onFlag={() => toggleFlag(currentQ.paper_question_id)}
+        onGoTo={(n) => setCurrentIdx(Math.min(Math.max(n - 1, 0), questions.length - 1))}
+        onSubmit={handleSubmit}
+        enabled={isVoiceEnabled}
+        totalQuestions={questions.length}
+      />
     </div>
   );
 };

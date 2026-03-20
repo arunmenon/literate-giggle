@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { evaluationAPI, examAPI, aiAPI } from "../services/api";
+import { useAuth } from "../store/AuthContext";
+import { AudioFeedback } from "../components/AudioFeedback";
 import type { Evaluation, ExamSession, ExplainResponse } from "../types";
 import {
   Button,
@@ -17,6 +19,7 @@ import {
 } from "../components/ui";
 import { BloomsRadar, DifficultyBreakdown } from "../components/charts";
 import { cn, getGradeColor } from "../lib/utils";
+import { MathText } from "../components/MathText";
 import {
   Award,
   TrendingUp,
@@ -34,6 +37,7 @@ import {
 
 const ExamResults: React.FC = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const { role } = useAuth();
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
   const [session, setSession] = useState<ExamSession | null>(null);
   const [loading, setLoading] = useState(true);
@@ -476,7 +480,7 @@ const ExamResults: React.FC = () => {
                 {evaluation.strengths.map((s, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm">
                     <CheckCircle className="h-3.5 w-3.5 text-green-500 mt-0.5 flex-shrink-0" />
-                    <span>{s}</span>
+                    <MathText text={s} />
                   </li>
                 ))}
               </ul>
@@ -498,7 +502,7 @@ const ExamResults: React.FC = () => {
                 {evaluation.weaknesses.map((w, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm">
                     <XCircle className="h-3.5 w-3.5 text-red-500 mt-0.5 flex-shrink-0" />
-                    <span>{w}</span>
+                    <MathText text={w} />
                   </li>
                 ))}
               </ul>
@@ -517,9 +521,7 @@ const ExamResults: React.FC = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
-              {evaluation.recommendations}
-            </p>
+            <MathText text={evaluation.recommendations} as="p" className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground" />
           </CardContent>
         </Card>
       )}
@@ -561,17 +563,41 @@ const ExamResults: React.FC = () => {
                         {qe.marks_obtained}/{qe.marks_possible}
                       </Badge>
                     </div>
-                    <p className="text-sm leading-relaxed mb-2">
-                      {qe.question_text}
-                    </p>
+                    <MathText text={qe.question_text} as="p" className="text-sm leading-relaxed mb-2" />
+
+                    {/* Question image (diagram) */}
+                    {qe.question_image_url && (
+                      <div className="mb-3">
+                        <img
+                          src={qe.question_image_url}
+                          alt="Question diagram"
+                          className="max-w-full rounded-lg border border-border cursor-pointer hover:opacity-90 transition-opacity"
+                          style={{ maxHeight: "250px" }}
+                          onClick={() => window.open(qe.question_image_url!, "_blank")}
+                        />
+                      </div>
+                    )}
 
                     {/* Student answer */}
-                    {qe.student_answer && (
+                    {(qe.student_answer || qe.student_answer_image_url) && (
                       <div className="bg-muted/50 rounded-md p-3 mb-2">
                         <p className="text-xs font-medium text-muted-foreground mb-1">
                           Your Answer
                         </p>
-                        <p className="text-sm">{qe.student_answer}</p>
+                        {qe.student_answer && (
+                          <MathText text={qe.student_answer} as="p" className="text-sm" />
+                        )}
+                        {qe.student_answer_image_url && (
+                          <div className="mt-2">
+                            <img
+                              src={qe.student_answer_image_url}
+                              alt="Your diagram answer"
+                              className="max-w-full rounded-lg border border-border cursor-pointer hover:opacity-90 transition-opacity"
+                              style={{ maxHeight: "250px" }}
+                              onClick={() => window.open(qe.student_answer_image_url!, "_blank")}
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -581,15 +607,13 @@ const ExamResults: React.FC = () => {
                         <p className="text-xs font-medium text-green-600 dark:text-green-400 mb-1">
                           Model Answer
                         </p>
-                        <p className="text-sm text-green-800 dark:text-green-200">
-                          {qe.model_answer}
-                        </p>
+                        <MathText text={qe.model_answer} as="p" className="text-sm text-green-800 dark:text-green-200" />
                       </div>
                     )}
 
                     {/* Feedback */}
                     {qe.feedback && (
-                      <p className="text-sm text-primary mt-1">{qe.feedback}</p>
+                      <MathText text={qe.feedback} as="p" className="text-sm text-primary mt-1" />
                     )}
 
                     {/* Keywords */}
@@ -642,37 +666,51 @@ const ExamResults: React.FC = () => {
                             AI Explanation
                           </span>
                         </div>
-                        <p className="text-sm leading-relaxed">
-                          {explanation.explanation}
-                        </p>
+                        <MathText text={explanation.explanation} as="p" className="text-sm leading-relaxed" />
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           <div className="bg-blue-50 dark:bg-blue-950/20 rounded-md p-3">
                             <p className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">
                               Key Concept
                             </p>
-                            <p className="text-xs text-blue-800 dark:text-blue-200">
-                              {explanation.key_concept}
-                            </p>
+                            <MathText text={explanation.key_concept} as="p" className="text-xs text-blue-800 dark:text-blue-200" />
                           </div>
                           <div className="bg-amber-50 dark:bg-amber-950/20 rounded-md p-3">
                             <p className="text-xs font-medium text-amber-600 dark:text-amber-400 mb-1">
                               Common Mistake
                             </p>
-                            <p className="text-xs text-amber-800 dark:text-amber-200">
-                              {explanation.common_mistake}
-                            </p>
+                            <MathText text={explanation.common_mistake} as="p" className="text-xs text-amber-800 dark:text-amber-200" />
                           </div>
                           <div className="bg-green-50 dark:bg-green-950/20 rounded-md p-3">
                             <p className="text-xs font-medium text-green-600 dark:text-green-400 mb-1">
                               Study Tip
                             </p>
-                            <p className="text-xs text-green-800 dark:text-green-200">
-                              {explanation.study_tip}
-                            </p>
+                            <MathText text={explanation.study_tip} as="p" className="text-xs text-green-800 dark:text-green-200" />
                           </div>
                         </div>
                       </div>
                     )}
+
+                    {/* Audio Feedback -- teacher records, student listens */}
+                    {evaluation && (role === "teacher" || role === "admin") && (
+                      <div className="mt-3">
+                        <AudioFeedback
+                          evaluationId={evaluation.id}
+                          questionEvaluationId={qe.id}
+                          existingUrl={qe.audio_feedback_url ?? undefined}
+                        />
+                      </div>
+                    )}
+                    {evaluation &&
+                      role === "student" &&
+                      qe.audio_feedback_url && (
+                        <div className="mt-3">
+                          <AudioFeedback
+                            evaluationId={evaluation.id}
+                            questionEvaluationId={qe.id}
+                            existingUrl={qe.audio_feedback_url}
+                          />
+                        </div>
+                      )}
                   </div>
                 </div>
               </div>

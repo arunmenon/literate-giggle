@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/Button";
 import { Textarea } from "./ui/Textarea";
+import { MathText } from "./MathText";
 import { MessageSquare, X, Send, Bot, User, Loader2 } from "lucide-react";
 
 export interface AIChatMessage {
@@ -151,7 +152,11 @@ const AIChat: React.FC<AIChatProps> = ({
                   : "bg-muted text-foreground",
               )}
             >
-              <p className="whitespace-pre-wrap">{msg.content}</p>
+              {msg.role === "assistant" ? (
+                <MathText text={msg.content} as="p" className="whitespace-pre-wrap" />
+              ) : (
+                <p className="whitespace-pre-wrap">{msg.content}</p>
+              )}
             </div>
             {msg.role === "user" && (
               <div className="flex-shrink-0 h-7 w-7 rounded-full bg-muted flex items-center justify-center">

@@ -24,6 +24,7 @@ import {
   useToast,
 } from "../components/ui";
 import { CurriculumPicker } from "../components/CurriculumPicker";
+import { MathText } from "../components/MathText";
 import { cn } from "../lib/utils";
 import {
   Plus,
@@ -523,7 +524,9 @@ const PapersPage: React.FC = () => {
                           <Badge variant="outline" className="text-xs mr-1">
                             {q.question_type}
                           </Badge>
-                          {q.question_text.slice(0, 80)}...
+                          <span style={{ overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                            <MathText text={q.question_text} />
+                          </span>
                           <span className="text-muted-foreground ml-1">
                             ({q.marks}m)
                           </span>
@@ -880,9 +883,7 @@ const PapersPage: React.FC = () => {
                                 </span>
                               )}
                             </div>
-                            <p className="text-sm">
-                              {item.question?.question_text || "Question text"}
-                            </p>
+                            <MathText text={item.question?.question_text || "Question text"} as="p" className="text-sm" />
                           </div>
                           <div className="flex flex-col gap-1 flex-shrink-0">
                             <button
