@@ -41,6 +41,37 @@ export interface Workspace {
   created_at: string;
 }
 
+export interface WorkspaceSummary {
+  id: number;
+  name: string;
+  type: string;
+  role: string;
+  owner_name: string | null;
+  class_count: number;
+  primary_subject: string | null;
+  color: string;
+}
+
+export interface CrossWorkspaceExam {
+  assignment_id: number;
+  paper_id: number;
+  paper_title: string;
+  subject: string;
+  total_marks: number;
+  duration_minutes: number;
+  class_id: number;
+  class_name: string;
+  workspace_id: number;
+  workspace_name: string;
+  teacher_name: string | null;
+  color: string;
+  status: string;
+  label: string | null;
+  start_at: string | null;
+  end_at: string | null;
+  is_practice: boolean;
+}
+
 export interface WorkspaceMember {
   id: number;
   workspace_id: number;
@@ -61,6 +92,8 @@ export interface ClassGroup {
   academic_year: string;
   teacher_id?: number;
   student_count?: number;
+  join_code?: string;
+  join_code_active?: boolean;
   created_at: string;
 }
 
@@ -69,6 +102,7 @@ export interface Enrollment {
   class_id: number;
   student_id: number;
   student_name?: string;
+  student_email?: string;
   enrolled_at: string;
   is_active: boolean;
 }
@@ -105,6 +139,7 @@ export interface Question {
   bank_id: number;
   question_type: string;
   question_text: string;
+  question_image_url?: string | null;
   marks: number;
   difficulty: string;
   blooms_level: string;
@@ -150,6 +185,7 @@ export interface PaperQuestionDetail {
   choice_group?: string;
   question_type: string;
   question_text: string;
+  question_image_url?: string | null;
   mcq_options?: Record<string, string>;
   difficulty: string;
   topic: string;
@@ -174,6 +210,8 @@ export interface StudentAnswer {
   paper_question_id: number;
   answer_text?: string;
   selected_option?: string;
+  answer_image_url?: string | null;
+  canvas_state?: object | null;
   is_flagged?: boolean;
 }
 
@@ -183,14 +221,17 @@ export interface QuestionEvaluation {
   id: number;
   question_text: string;
   question_type: string;
+  question_image_url?: string | null;
   marks_obtained: number;
   marks_possible: number;
   student_answer?: string;
+  student_answer_image_url?: string | null;
   model_answer?: string;
   feedback?: string;
   keywords_found?: string[];
   keywords_missing?: string[];
   improvement_hint?: string;
+  audio_feedback_url?: string | null;
 }
 
 export interface Evaluation {
@@ -284,6 +325,7 @@ export interface StudentDashboard {
 export interface GeneratedQuestion {
   question_text: string;
   question_type: string;
+  question_image_url?: string | null;
   marks: number;
   difficulty: string;
   blooms_level: string;
@@ -295,6 +337,8 @@ export interface GeneratedQuestion {
   correct_option?: string;
   marking_scheme?: Array<{ step: string; marks: number; keywords?: string[] }>;
   source?: string;
+  blooms_confidence?: number | null;
+  blooms_teacher_confirmed?: boolean;
 }
 
 export interface GenerateResponse {
@@ -552,4 +596,118 @@ export interface PaperBloomsTarget {
   actual: number;
   target: number;
   status: "green" | "amber" | "red";
+}
+
+// ── Coverage Heatmap ──
+
+export interface HeatmapCell {
+  chapter_id: number;
+  chapter_name: string;
+  blooms_level: string;
+  question_count: number;
+  question_ids: number[];
+}
+
+export interface CoverageHeatmapResponse {
+  bank_id: number;
+  chapters: string[];
+  blooms_levels: string[];
+  cells: HeatmapCell[];
+  total_questions: number;
+}
+
+// ── Difficulty Calibration ──
+
+export interface DifficultyCalibration {
+  question_id: number;
+  assigned_difficulty: string;
+  empirical_difficulty: string;
+  empirical_score: number;
+  sample_size: number;
+  confidence: "low" | "medium" | "high";
+  mismatch: boolean;
+  mismatch_direction?: "easier_than_marked" | "harder_than_marked";
+}
+
+export interface BankCalibrationResponse {
+  bank_id: number;
+  calibrations: DifficultyCalibration[];
+  total_calibrated: number;
+  total_mismatches: number;
+}
+
+// ── DPDP Consent (FR-005) ──
+
+export interface ConsentStatus {
+  parental_consent_given: boolean;
+  consent_given_at: string | null;
+  guardian_name: string | null;
+  voice_features_enabled: boolean;
+}
+
+export interface ConsentGrantRequest {
+  guardian_name: string;
+  guardian_email: string;
+}
+
+export interface ConsentGrantResponse {
+  parental_consent_given: true;
+  consent_given_at: string;
+  guardian_name: string;
+  voice_features_enabled: true;
+}
+
+// ── Voice AI (FR-005) ──
+
+export interface VoiceTranscriptEvent {
+  type: "partial" | "final" | "error" | "ready";
+  text?: string;
+  confidence?: number;
+  provider?: string;
+  message?: string;
+  code?: string;
+}
+
+// ── Diagram Generation (FR-001 Phase 2) ──
+
+export interface DiagramGenerationResponse {
+  svg_url: string | null;
+  renderer_used: "svg" | "mermaid" | "mafs";
+  client_params: { syntax: string } | null;
+  alt_text: string;
+}
+
+export interface AcceptDiagramResponse {
+  question_id: number;
+  question_image_url: string;
+  accepted: true;
+}
+
+// ── Enrollment Roster (Phase 2) ──
+
+export interface PaginatedEnrollmentResponse {
+  students: Enrollment[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+}
+
+export interface BulkEnrollResult {
+  enrolled: string[];
+  already_enrolled: string[];
+  not_found: string[];
+  errors: string[];
+}
+
+export interface ImportResult {
+  total_rows: number;
+  enrolled: number;
+  skipped: number;
+  errors: string[];
+}
+
+export interface InviteLinkResponse {
+  invite_url: string;
+  expires_at: string;
 }

@@ -14,11 +14,16 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 - redirect to login
+// Handle 401 - redirect to login (skip for auth endpoints)
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const url = error.config?.url || "";
+    const isAuthEndpoint =
+      url.includes("/auth/login") ||
+      url.includes("/auth/register") ||
+      url.includes("/auth/google/verify");
+    if (error.response?.status === 401 && !isAuthEndpoint) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       window.location.href = "/login";
@@ -29,15 +34,43 @@ api.interceptors.response.use(
 
 export default api;
 
+// ── Voice WebSocket (FR-005) ──
+
+/**
+ * Build a WebSocket URL for voice endpoints with JWT auth.
+ * Uses the current page origin, swapping http(s) for ws(s).
+ */
+export function getVoiceWsUrl(endpoint: string): string {
+  const token = localStorage.getItem("token");
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const host = window.location.host;
+  const path = `/api/voice/${endpoint}`.replace(/\/+/g, "/");
+  const url = `${protocol}//${host}${path}`;
+  return token ? `${url}?token=${encodeURIComponent(token)}` : url;
+}
+
 // ── Auth ──
 
 export const authAPI = {
   register: (data: any) => api.post("/auth/register", data),
   login: (data: { email: string; password: string }) =>
     api.post("/auth/login", data),
+  googleVerify: (data: {
+    credential: string;
+    role?: string;
+    student_profile?: any;
+    teacher_profile?: any;
+    invite_code?: string;
+    class_join_code?: string;
+  }) => api.post("/auth/google/verify", data),
   me: () => api.get("/auth/me"),
   getPreferences: () => api.get("/auth/me/preferences"),
   updatePreferences: (data: any) => api.patch("/auth/me/preferences", data),
+  // DPDP Consent (FR-005)
+  grantConsent: (data: { guardian_name: string; guardian_email: string }) =>
+    api.post("/auth/consent", data),
+  getConsentStatus: () => api.get("/auth/consent/status"),
+  revokeConsent: () => api.post("/auth/consent/revoke"),
 };
 
 // ── Questions ──
@@ -60,6 +93,27 @@ export const questionAPI = {
     api.post("/questions/generate/regenerate", data),
   getBankAnalytics: (bankId: number) =>
     api.get(`/questions/banks/${bankId}/analytics`),
+  getBankHeatmap: (bankId: number) =>
+    api.get(`/questions/banks/${bankId}/heatmap`),
+  getCalibration: (questionId: number) =>
+    api.get(`/questions/${questionId}/calibration`),
+  getBankCalibration: (bankId: number) =>
+    api.get(`/questions/banks/${bankId}/calibration`),
+  uploadImage: (questionId: number, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.post(`/questions/${questionId}/upload-image`, fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
+  generateDiagram: (
+    questionId: number,
+    data: { subject: string; topic: string; question_text: string },
+  ) => api.post(`/questions/${questionId}/generate-diagram`, data),
+  acceptDiagram: (
+    questionId: number,
+    data: { svg_url: string; alt_text?: string },
+  ) => api.post(`/questions/${questionId}/accept-diagram`, data),
 };
 
 // ── Papers ──
@@ -88,6 +142,15 @@ export const examAPI = {
     api.post(`/exams/${sessionId}/flag/${pqId}`),
   get: (sessionId: number) => api.get(`/exams/${sessionId}`),
   list: () => api.get("/exams"),
+  getAllWorkspaces: () => api.get("/exams/all-workspaces"),
+  uploadAnswerImage: (sessionId: number, paperQuestionId: number, blob: Blob) => {
+    const fd = new FormData();
+    fd.append("file", blob, `answer_${paperQuestionId}.png`);
+    fd.append("paper_question_id", String(paperQuestionId));
+    return api.post(`/exams/${sessionId}/upload-answer-image`, fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
 };
 
 // ── Evaluations ──
@@ -159,6 +222,42 @@ export const classAPI = {
     api.post(`/classes/${classId}/assign-exam`, data),
   getAssignments: (classId: number) =>
     api.get(`/classes/${classId}/assignments`),
+  join: (data: { join_code: string }) => api.post("/classes/join", data),
+  getQRCode: (classId: number, size?: number) =>
+    api.get(`/classes/${classId}/qr-code`, {
+      params: { size },
+      responseType: "blob",
+    }),
+  regenerateCode: (classId: number) =>
+    api.post(`/classes/${classId}/regenerate-code`),
+  toggleJoinCode: (classId: number, active: boolean) =>
+    api.patch(`/classes/${classId}/join-code`, { active }),
+  copyRoster: (classId: number, data: { source_class_id: number }) =>
+    api.post(`/classes/${classId}/copy-roster`, data),
+  getStudentsPaginated: (
+    classId: number,
+    params?: {
+      page?: number;
+      per_page?: number;
+      search?: string;
+      sort_by?: string;
+      sort_order?: string;
+      active_only?: boolean;
+    },
+  ) => api.get(`/classes/${classId}/students`, { params }),
+  bulkEnroll: (
+    classId: number,
+    data: { emails: string[]; skip_unregistered?: boolean },
+  ) => api.post(`/classes/${classId}/students/bulk`, data),
+  importStudents: (classId: number, formData: FormData) =>
+    api.post(`/classes/${classId}/students/import`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }),
+  generateInviteLink: (
+    classId: number,
+    data: { expires_in_hours?: number },
+  ) => api.post(`/classes/${classId}/invite-link`, data),
+  joinByLink: (token: string) => api.post(`/classes/join/link/${token}`),
 };
 
 // ── Taxonomy ──
@@ -200,6 +299,32 @@ export const taxonomyAPI = {
     api.post("/taxonomy/clone", data),
   getSubjectDetail: (subjectId: number) =>
     api.get(`/taxonomy/subjects/${subjectId}`),
+};
+
+// ── Voice AI ──
+
+export const voiceAPI = {
+  dictateQuestion: (audioFile: File) => {
+    const fd = new FormData();
+    fd.append("audio", audioFile);
+    return api.post("/voice/dictate-question", fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
+  uploadAudioFeedback: (
+    evaluationId: number,
+    questionEvaluationId: number,
+    audioFile: File,
+  ) => {
+    const fd = new FormData();
+    fd.append("audio", audioFile);
+    fd.append("question_evaluation_id", String(questionEvaluationId));
+    return api.post(`/voice/evaluations/${evaluationId}/audio-feedback`, fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
+  getAudioFeedbackUrl: (evaluationId: number, questionEvaluationId: number) =>
+    `/api/voice/evaluations/${evaluationId}/audio-feedback/${questionEvaluationId}`,
 };
 
 // ── Curriculum ──

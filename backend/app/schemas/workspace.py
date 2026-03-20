@@ -39,6 +39,10 @@ class WorkspaceSummary(BaseModel):
     name: str
     type: str
     role: str  # user's role in this workspace
+    owner_name: Optional[str] = None
+    class_count: int = 0
+    primary_subject: Optional[str] = None
+    color: str = "#3B82F6"
 
 
 class JoinWorkspaceRequest(BaseModel):
@@ -68,11 +72,37 @@ class ClassGroupResponse(BaseModel):
     subject: Optional[str]
     academic_year: Optional[str]
     teacher_id: Optional[int]
+    join_code: str
+    join_code_active: bool
     student_count: int = 0
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+# ── Join Class (student self-enrollment) ──
+
+class JoinClassRequest(BaseModel):
+    join_code: str
+
+
+class JoinClassResponse(BaseModel):
+    class_id: int
+    class_name: str
+    workspace_id: int
+    workspace_name: str
+    message: str
+
+
+class CopyRosterRequest(BaseModel):
+    source_class_id: int
+
+
+class CopyRosterResponse(BaseModel):
+    copied: int
+    skipped: int
+    total: int
 
 
 # ── Enrollment ──
@@ -90,6 +120,50 @@ class EnrollmentResponse(BaseModel):
     student_email: str
     enrolled_at: datetime
     is_active: bool
+
+
+# ── Bulk Enrollment ──
+
+class BulkEnrollRequest(BaseModel):
+    emails: list[str]
+    skip_unregistered: bool = False
+
+
+class BulkEnrollResponse(BaseModel):
+    enrolled: list[str]
+    already_enrolled: list[str]
+    not_found: list[str]
+    errors: list[str]
+
+
+# ── CSV/Excel Import ──
+
+class ImportResponse(BaseModel):
+    total_rows: int
+    enrolled: int
+    skipped: int
+    errors: list[str]
+
+
+# ── Invite Link ──
+
+class InviteLinkRequest(BaseModel):
+    expires_in_hours: int = 72
+
+
+class InviteLinkResponse(BaseModel):
+    invite_url: str
+    expires_at: datetime
+
+
+# ── Paginated Enrollment ──
+
+class PaginatedEnrollmentResponse(BaseModel):
+    students: list[EnrollmentResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
 
 
 # ── Exam Assignment ──

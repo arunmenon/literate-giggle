@@ -34,6 +34,18 @@ class UserRegister(BaseModel):
     student_profile: Optional[StudentProfileCreate] = None
     teacher_profile: Optional[TeacherProfileCreate] = None
     invite_code: Optional[str] = None
+    class_join_code: Optional[str] = None
+    guardian_name: Optional[str] = None
+    guardian_email: Optional[EmailStr] = None
+
+
+class GoogleVerifyRequest(BaseModel):
+    credential: str  # Google JWT from frontend
+    role: Optional[str] = None  # Required for new users: "student" or "teacher"
+    student_profile: Optional[StudentProfileCreate] = None
+    teacher_profile: Optional[TeacherProfileCreate] = None
+    invite_code: Optional[str] = None
+    class_join_code: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
@@ -72,6 +84,21 @@ class StudentProfileResponse(BaseModel):
     school_name: Optional[str]
     section: Optional[str]
     academic_year: str
+
+    class Config:
+        from_attributes = True
+
+
+class ConsentGrantRequest(BaseModel):
+    guardian_name: str
+    guardian_email: EmailStr
+
+
+class ConsentStatusResponse(BaseModel):
+    parental_consent_given: bool
+    consent_given_at: Optional[datetime] = None
+    guardian_name: Optional[str] = None
+    voice_features_enabled: bool
 
     class Config:
         from_attributes = True

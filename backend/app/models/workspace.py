@@ -61,6 +61,12 @@ class ClassGroup(Base):
     subject = Column(String(100))
     academic_year = Column(String(20))
     teacher_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # Join code fields for student self-enrollment
+    join_code = Column(String(8), unique=True, nullable=False, default=generate_invite_code)
+    join_code_active = Column(Boolean, default=True)
+    invite_link_token = Column(String(64), unique=True, nullable=True)
+    link_expires_at = Column(DateTime, nullable=True)
+    max_students = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     workspace = relationship("Workspace", back_populates="classes")

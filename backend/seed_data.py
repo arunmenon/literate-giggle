@@ -165,7 +165,7 @@ async def seed():
         # CLASS GROUPS & ENROLLMENTS
         # ══════════════════════════════════════════
 
-        # Teacher1's class
+        # Teacher1's class (well-known join code for testing)
         class_10a = ClassGroup(
             workspace_id=ws1.id,
             name="Class 10-A",
@@ -174,6 +174,7 @@ async def seed():
             subject="Mathematics",
             academic_year="2025-26",
             teacher_id=teacher.id,
+            join_code="JOIN10A",
         )
         db.add(class_10a)
         await db.flush()

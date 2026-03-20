@@ -1,7 +1,15 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { classAPI, paperAPI } from "../services/api";
 import { useAuth } from "../store/AuthContext";
-import type { ClassGroup, Enrollment, ExamAssignment } from "../types";
+import type {
+  ClassGroup,
+  Enrollment,
+  ExamAssignment,
+  PaginatedEnrollmentResponse,
+  BulkEnrollResult,
+  ImportResult,
+  InviteLinkResponse,
+} from "../types";
 import {
   Card,
   CardHeader,
@@ -14,6 +22,15 @@ import {
   Select,
   Badge,
   Skeleton,
+  Textarea,
+  useToast,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
 } from "../components/ui";
 import {
   Plus,
@@ -25,6 +42,27 @@ import {
   UserPlus,
   Calendar,
   GraduationCap,
+  Share2,
+  Copy,
+  QrCode,
+  RefreshCw,
+  Download,
+  MessageCircle,
+  Link,
+  ToggleLeft,
+  ToggleRight,
+  FolderInput,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Check,
+  Upload,
+  FileSpreadsheet,
+  Mail,
+  X,
+  ArrowUpDown,
+  LinkIcon,
+  Clock,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -74,6 +112,41 @@ const ClassManagement: React.FC = () => {
   const [enrollEmail, setEnrollEmail] = useState("");
   const [enrollLoading, setEnrollLoading] = useState(false);
 
+  // Share & enrollment
+  const { toast, ToastContainer } = useToast();
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [regeneratingCode, setRegeneratingCode] = useState(false);
+  const [togglingCode, setTogglingCode] = useState(false);
+  const [showCopyRoster, setShowCopyRoster] = useState(false);
+  const [copyRosterSourceId, setCopyRosterSourceId] = useState("");
+  const [copyingRoster, setCopyingRoster] = useState(false);
+
+  // Roster pagination, search, sort
+  const [rosterPage, setRosterPage] = useState(1);
+  const [rosterPerPage, setRosterPerPage] = useState(25);
+  const [rosterSearch, setRosterSearch] = useState("");
+  const [rosterSortBy, setRosterSortBy] = useState("name");
+  const [rosterSortOrder, setRosterSortOrder] = useState<"asc" | "desc">("asc");
+  const [rosterTotal, setRosterTotal] = useState(0);
+  const [rosterTotalPages, setRosterTotalPages] = useState(0);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Bulk selection
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<number>>(new Set());
+  const [bulkRemoving, setBulkRemoving] = useState(false);
+
+  // Import modal
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importMode, setImportMode] = useState<"file" | "email">("file");
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importEmails, setImportEmails] = useState("");
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResult, setImportResult] = useState<BulkEnrollResult | ImportResult | null>(null);
+
+  // Invite link
+  const [inviteLink, setInviteLink] = useState<InviteLinkResponse | null>(null);
+  const [generatingInviteLink, setGeneratingInviteLink] = useState(false);
+
   // Assign exam form
   const [showAssignForm, setShowAssignForm] = useState(false);
   const [papers, setPapers] = useState<Array<{ id: number; title: string }>>(
@@ -104,23 +177,334 @@ const ClassManagement: React.FC = () => {
     loadClasses();
   }, [loadClasses]);
 
+  const loadStudents = useCallback(
+    async (
+      classId: number,
+      page = 1,
+      perPage = 25,
+      search = "",
+      sortBy = "name",
+      sortOrder = "asc",
+    ) => {
+      try {
+        const { data } = await classAPI.getStudentsPaginated(classId, {
+          page,
+          per_page: perPage,
+          search: search || undefined,
+          sort_by: sortBy,
+          sort_order: sortOrder,
+        });
+        // Handle paginated wrapper response
+        const paginated = data as PaginatedEnrollmentResponse;
+        setStudents(paginated.students);
+        setRosterTotal(paginated.total);
+        setRosterTotalPages(paginated.total_pages);
+      } catch {
+        // Fallback: try legacy flat array response
+        try {
+          const { data } = await classAPI.getStudents(classId);
+          const arr = Array.isArray(data) ? data : (data as any).students || [];
+          setStudents(arr);
+          setRosterTotal(arr.length);
+          setRosterTotalPages(1);
+        } catch {
+          setStudents([]);
+          setRosterTotal(0);
+          setRosterTotalPages(0);
+        }
+      }
+    },
+    [],
+  );
+
   const loadClassDetail = async (cls: ClassGroup) => {
     setSelectedClass(cls);
     setView("detail");
     setDetailLoading(true);
+    setQrCodeUrl(null);
+    setSelectedStudentIds(new Set());
+    setRosterPage(1);
+    setRosterSearch("");
+    setRosterSortBy("name");
+    setRosterSortOrder("asc");
+    setInviteLink(null);
     try {
-      const [studentsRes, assignmentsRes] = await Promise.all([
-        classAPI.getStudents(cls.id),
+      const [, assignmentsRes] = await Promise.all([
+        loadStudents(cls.id, 1, rosterPerPage, "", "name", "asc"),
         classAPI.getAssignments(cls.id),
       ]);
-      setStudents(studentsRes.data);
       setAssignments(assignmentsRes.data);
+      // Load QR code
+      if (cls.join_code) {
+        try {
+          const qrRes = await classAPI.getQRCode(cls.id, 200);
+          const url = URL.createObjectURL(qrRes.data);
+          setQrCodeUrl(url);
+        } catch {
+          // QR code is optional, don't block on failure
+        }
+      }
     } catch {
       setError("Failed to load class details");
     } finally {
       setDetailLoading(false);
     }
   };
+
+  const handleCopyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(`${label} copied to clipboard`, "success");
+    } catch {
+      toast("Failed to copy to clipboard", "error");
+    }
+  };
+
+  const joinUrl = selectedClass?.join_code
+    ? `${window.location.origin}/join/${selectedClass.join_code}`
+    : "";
+
+  const whatsAppMessage = selectedClass
+    ? `Join my class "${selectedClass.name}" on ExamIQ!\n\nUse code: ${selectedClass.join_code}\nOr click: ${joinUrl}`
+    : "";
+
+  const handleWhatsAppShare = () => {
+    const url = `https://wa.me/?text=${encodeURIComponent(whatsAppMessage)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleDownloadQR = async () => {
+    if (!selectedClass) return;
+    try {
+      const res = await classAPI.getQRCode(selectedClass.id, 400);
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${selectedClass.name}-qr-code.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast("Failed to download QR code", "error");
+    }
+  };
+
+  const handleRegenerateCode = async () => {
+    if (!selectedClass) return;
+    setRegeneratingCode(true);
+    try {
+      const { data } = await classAPI.regenerateCode(selectedClass.id);
+      setSelectedClass((prev) =>
+        prev ? { ...prev, join_code: data.join_code, join_code_active: data.join_code_active } : prev,
+      );
+      // Reload QR code
+      try {
+        const qrRes = await classAPI.getQRCode(selectedClass.id, 200);
+        const url = URL.createObjectURL(qrRes.data);
+        setQrCodeUrl(url);
+      } catch { /* optional */ }
+      toast("Join code regenerated", "success");
+    } catch (err: any) {
+      toast(err.response?.data?.detail || "Failed to regenerate code", "error");
+    } finally {
+      setRegeneratingCode(false);
+    }
+  };
+
+  const handleToggleCode = async () => {
+    if (!selectedClass) return;
+    const newActive = !selectedClass.join_code_active;
+    setTogglingCode(true);
+    try {
+      await classAPI.toggleJoinCode(selectedClass.id, newActive);
+      setSelectedClass((prev) =>
+        prev ? { ...prev, join_code_active: newActive } : prev,
+      );
+      toast(newActive ? "Join code activated" : "Join code deactivated", "success");
+    } catch (err: any) {
+      toast(err.response?.data?.detail || "Failed to toggle join code", "error");
+    } finally {
+      setTogglingCode(false);
+    }
+  };
+
+  const handleCopyRoster = async () => {
+    if (!selectedClass || !copyRosterSourceId) return;
+    setCopyingRoster(true);
+    try {
+      const { data } = await classAPI.copyRoster(selectedClass.id, {
+        source_class_id: Number(copyRosterSourceId),
+      });
+      toast(`Imported ${data.copied} students (${data.skipped} already enrolled)`, "success");
+      setCopyRosterSourceId("");
+      setShowCopyRoster(false);
+      // Refresh students list
+      await loadStudents(
+        selectedClass.id,
+        rosterPage,
+        rosterPerPage,
+        rosterSearch,
+        rosterSortBy,
+        rosterSortOrder,
+      );
+    } catch (err: any) {
+      toast(err.response?.data?.detail || "Failed to copy roster", "error");
+    } finally {
+      setCopyingRoster(false);
+    }
+  };
+
+  // Debounced search
+  const handleSearchChange = (value: string) => {
+    setRosterSearch(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      if (selectedClass) {
+        setRosterPage(1);
+        setSelectedStudentIds(new Set());
+        loadStudents(selectedClass.id, 1, rosterPerPage, value, rosterSortBy, rosterSortOrder);
+      }
+    }, 300);
+  };
+
+  const handleSortChange = (sortBy: string) => {
+    const newOrder = sortBy === rosterSortBy && rosterSortOrder === "asc" ? "desc" : "asc";
+    setRosterSortBy(sortBy);
+    setRosterSortOrder(newOrder);
+    setRosterPage(1);
+    setSelectedStudentIds(new Set());
+    if (selectedClass) {
+      loadStudents(selectedClass.id, 1, rosterPerPage, rosterSearch, sortBy, newOrder);
+    }
+  };
+
+  const handlePageChange = (page: number) => {
+    setRosterPage(page);
+    setSelectedStudentIds(new Set());
+    if (selectedClass) {
+      loadStudents(selectedClass.id, page, rosterPerPage, rosterSearch, rosterSortBy, rosterSortOrder);
+    }
+  };
+
+  const handlePerPageChange = (perPage: number) => {
+    setRosterPerPage(perPage);
+    setRosterPage(1);
+    setSelectedStudentIds(new Set());
+    if (selectedClass) {
+      loadStudents(selectedClass.id, 1, perPage, rosterSearch, rosterSortBy, rosterSortOrder);
+    }
+  };
+
+  // Bulk selection
+  const handleToggleStudent = (studentId: number) => {
+    setSelectedStudentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  };
+
+  const handleToggleAll = () => {
+    if (selectedStudentIds.size === students.length) {
+      setSelectedStudentIds(new Set());
+    } else {
+      setSelectedStudentIds(new Set(students.map((s) => s.student_id)));
+    }
+  };
+
+  const handleBulkRemove = async () => {
+    if (!selectedClass || selectedStudentIds.size === 0) return;
+    setBulkRemoving(true);
+    try {
+      const promises = Array.from(selectedStudentIds).map((sid) =>
+        classAPI.removeStudent(selectedClass.id, sid),
+      );
+      await Promise.all(promises);
+      toast(`Removed ${selectedStudentIds.size} student(s)`, "success");
+      setSelectedStudentIds(new Set());
+      await loadStudents(
+        selectedClass.id,
+        rosterPage,
+        rosterPerPage,
+        rosterSearch,
+        rosterSortBy,
+        rosterSortOrder,
+      );
+    } catch {
+      toast("Failed to remove some students", "error");
+    } finally {
+      setBulkRemoving(false);
+    }
+  };
+
+  // Import modal handlers
+  const handleImport = async () => {
+    if (!selectedClass) return;
+    setImportLoading(true);
+    setImportResult(null);
+    try {
+      if (importMode === "file" && importFile) {
+        const formData = new FormData();
+        formData.append("file", importFile);
+        const { data } = await classAPI.importStudents(selectedClass.id, formData);
+        setImportResult(data);
+        toast(`Imported ${data.enrolled} student(s)`, "success");
+      } else if (importMode === "email" && importEmails.trim()) {
+        const emails = importEmails
+          .split("\n")
+          .map((e) => e.trim())
+          .filter((e) => e.length > 0);
+        const { data } = await classAPI.bulkEnroll(selectedClass.id, {
+          emails,
+          skip_unregistered: true,
+        });
+        setImportResult(data);
+        toast(`Enrolled ${data.enrolled.length} student(s)`, "success");
+      }
+      await loadStudents(
+        selectedClass.id,
+        rosterPage,
+        rosterPerPage,
+        rosterSearch,
+        rosterSortBy,
+        rosterSortOrder,
+      );
+    } catch (err: any) {
+      toast(err.response?.data?.detail || "Import failed", "error");
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const resetImportModal = () => {
+    setImportFile(null);
+    setImportEmails("");
+    setImportResult(null);
+    setImportMode("file");
+  };
+
+  // Invite link
+  const handleGenerateInviteLink = async () => {
+    if (!selectedClass) return;
+    setGeneratingInviteLink(true);
+    try {
+      const { data } = await classAPI.generateInviteLink(selectedClass.id, {
+        expires_in_hours: 72,
+      });
+      setInviteLink(data);
+      toast("Invite link generated", "success");
+    } catch (err: any) {
+      toast(err.response?.data?.detail || "Failed to generate invite link", "error");
+    } finally {
+      setGeneratingInviteLink(false);
+    }
+  };
+
+  // Compute active/inactive counts
+  const activeCount = students.filter((s) => s.is_active).length;
+  const inactiveCount = students.filter((s) => !s.is_active).length;
 
   const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,8 +546,14 @@ const ClassManagement: React.FC = () => {
         email: enrollEmail.trim(),
       });
       setEnrollEmail("");
-      const { data } = await classAPI.getStudents(selectedClass.id);
-      setStudents(data);
+      await loadStudents(
+        selectedClass.id,
+        rosterPage,
+        rosterPerPage,
+        rosterSearch,
+        rosterSortBy,
+        rosterSortOrder,
+      );
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to enroll student");
     } finally {
@@ -176,7 +566,19 @@ const ClassManagement: React.FC = () => {
     setError("");
     try {
       await classAPI.removeStudent(selectedClass.id, studentId);
-      setStudents((prev) => prev.filter((s) => s.student_id !== studentId));
+      setSelectedStudentIds((prev) => {
+        const next = new Set(prev);
+        next.delete(studentId);
+        return next;
+      });
+      await loadStudents(
+        selectedClass.id,
+        rosterPage,
+        rosterPerPage,
+        rosterSearch,
+        rosterSortBy,
+        rosterSortOrder,
+      );
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to remove student");
     }
@@ -270,73 +672,515 @@ const ClassManagement: React.FC = () => {
             <Skeleton className="h-64" />
           </div>
         ) : (
-          <div className="grid gap-6 lg:grid-cols-2">
-            {/* Students section */}
-            <Card>
+          <div className="space-y-6">
+            {/* Share & Enrollment panel */}
+            {selectedClass.join_code && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Share2 className="h-5 w-5 text-muted-foreground" />
+                      <CardTitle className="text-base">
+                        Share & Enrollment
+                      </CardTitle>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleToggleCode}
+                        disabled={togglingCode}
+                        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label={selectedClass.join_code_active ? "Deactivate join code" : "Activate join code"}
+                      >
+                        {selectedClass.join_code_active ? (
+                          <ToggleRight className="h-5 w-5 text-green-600" />
+                        ) : (
+                          <ToggleLeft className="h-5 w-5 text-muted-foreground" />
+                        )}
+                        <span className="text-xs">
+                          {selectedClass.join_code_active ? "Active" : "Inactive"}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-[1fr_auto_1fr]">
+                    {/* Join code + actions */}
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">
+                          Join Code
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-2xl font-bold tracking-wider text-foreground">
+                            {selectedClass.join_code}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              handleCopyToClipboard(
+                                selectedClass.join_code || "",
+                                "Join code",
+                              )
+                            }
+                            className="h-8 w-8 p-0"
+                            aria-label="Copy join code"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        {!selectedClass.join_code_active && (
+                          <p className="text-xs text-amber-600 mt-1">
+                            Code is currently disabled. Students cannot join.
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            handleCopyToClipboard(joinUrl, "Join link")
+                          }
+                          className="gap-1.5"
+                        >
+                          <Link className="h-3.5 w-3.5" />
+                          Copy Link
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleWhatsAppShare}
+                          className="gap-1.5 text-green-700 border-green-200 hover:bg-green-50 hover:text-green-800 dark:text-green-400 dark:border-green-800 dark:hover:bg-green-950"
+                        >
+                          <MessageCircle className="h-3.5 w-3.5" />
+                          WhatsApp
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleRegenerateCode}
+                          disabled={regeneratingCode}
+                          className="gap-1.5"
+                        >
+                          <RefreshCw
+                            className={cn(
+                              "h-3.5 w-3.5",
+                              regeneratingCode && "animate-spin",
+                            )}
+                          />
+                          {regeneratingCode ? "Regenerating..." : "Regenerate"}
+                        </Button>
+                      </div>
+
+                      {/* Copy Roster */}
+                      <div>
+                        {!showCopyRoster ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setShowCopyRoster(true)}
+                            className="gap-1.5"
+                          >
+                            <FolderInput className="h-3.5 w-3.5" />
+                            Import from Another Class
+                          </Button>
+                        ) : (
+                          <div className="flex gap-2 items-end">
+                            <div className="flex-1 space-y-1">
+                              <label className="text-xs font-medium text-muted-foreground">
+                                Source Class
+                              </label>
+                              <Select
+                                options={classes
+                                  .filter((c) => c.id !== selectedClass.id)
+                                  .map((c) => ({
+                                    value: String(c.id),
+                                    label: c.name,
+                                  }))}
+                                placeholder="Select class..."
+                                value={copyRosterSourceId}
+                                onChange={(e) =>
+                                  setCopyRosterSourceId(e.target.value)
+                                }
+                              />
+                            </div>
+                            <Button
+                              size="sm"
+                              onClick={handleCopyRoster}
+                              disabled={copyingRoster || !copyRosterSourceId}
+                            >
+                              {copyingRoster ? "Importing..." : "Import"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setShowCopyRoster(false);
+                                setCopyRosterSourceId("");
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* QR Code */}
+                    <div className="flex flex-col items-center gap-2">
+                      {qrCodeUrl ? (
+                        <>
+                          <div className="rounded-lg border bg-white p-2">
+                            <img
+                              src={qrCodeUrl}
+                              alt={`QR code for ${selectedClass.name}`}
+                              className="h-[150px] w-[150px]"
+                            />
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={handleDownloadQR}
+                            className="gap-1.5 text-xs"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Download QR
+                          </Button>
+                        </>
+                      ) : (
+                        <div className="flex h-[150px] w-[150px] items-center justify-center rounded-lg border bg-muted/30">
+                          <QrCode className="h-8 w-8 text-muted-foreground/50" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Invite Link Section */}
+            {selectedClass.join_code && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <LinkIcon className="h-5 w-5 text-muted-foreground" />
+                    <CardTitle className="text-base">Invite Link</CardTitle>
+                  </div>
+                  <CardDescription>
+                    Generate a time-limited invite link for students
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {inviteLink ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+                        <span className="flex-1 truncate text-sm font-mono">
+                          {inviteLink.invite_url}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 shrink-0"
+                          onClick={() =>
+                            handleCopyToClipboard(inviteLink.invite_url, "Invite link")
+                          }
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Clock className="h-3.5 w-3.5" />
+                        Expires{" "}
+                        {new Date(inviteLink.expires_at).toLocaleString()}
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleGenerateInviteLink}
+                        disabled={generatingInviteLink}
+                      >
+                        <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", generatingInviteLink && "animate-spin")} />
+                        Regenerate
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={handleGenerateInviteLink}
+                      disabled={generatingInviteLink}
+                    >
+                      <LinkIcon className="mr-1.5 h-4 w-4" />
+                      {generatingInviteLink ? "Generating..." : "Generate Invite Link"}
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Students roster section */}
+            <Card className="lg:col-span-2">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Users className="h-5 w-5 text-muted-foreground" />
-                    <CardTitle className="text-base">
-                      Students ({students.length})
-                    </CardTitle>
+                    <CardTitle className="text-base">Students</CardTitle>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        resetImportModal();
+                        setShowImportModal(true);
+                      }}
+                    >
+                      <Upload className="mr-1 h-4 w-4" />
+                      Import
+                    </Button>
+                  </div>
+                </div>
+                {/* Summary header */}
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <span className="text-muted-foreground">
+                    <span className="font-semibold text-foreground">{rosterTotal}</span> total
+                  </span>
+                  <span className="text-muted-foreground">
+                    <span className="font-semibold text-green-600">{activeCount}</span> active
+                  </span>
+                  {inactiveCount > 0 && (
+                    <span className="text-muted-foreground">
+                      <span className="font-semibold text-amber-600">{inactiveCount}</span> inactive
+                    </span>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <form onSubmit={handleEnrollStudent} className="flex gap-2">
-                  <Input
-                    placeholder="Student email"
-                    value={enrollEmail}
-                    onChange={(e) => setEnrollEmail(e.target.value)}
-                    type="email"
-                    className="flex-1"
-                  />
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={enrollLoading || !enrollEmail.trim()}
-                  >
-                    <UserPlus className="mr-1 h-4 w-4" />
-                    {enrollLoading ? "Adding..." : "Add"}
-                  </Button>
-                </form>
+                {/* Enroll + Search bar */}
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <form onSubmit={handleEnrollStudent} className="flex gap-2 flex-1">
+                    <Input
+                      placeholder="Enroll by email"
+                      value={enrollEmail}
+                      onChange={(e) => setEnrollEmail(e.target.value)}
+                      type="email"
+                      className="flex-1"
+                    />
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={enrollLoading || !enrollEmail.trim()}
+                    >
+                      <UserPlus className="mr-1 h-4 w-4" />
+                      {enrollLoading ? "..." : "Add"}
+                    </Button>
+                  </form>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Search students..."
+                      value={rosterSearch}
+                      onChange={(e) => handleSearchChange(e.target.value)}
+                      className="pl-9 w-full sm:w-56"
+                    />
+                  </div>
+                </div>
 
+                {/* Sort controls */}
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-muted-foreground">Sort by:</span>
+                  {[
+                    { key: "name", label: "Name" },
+                    { key: "email", label: "Email" },
+                    { key: "enrolled_at", label: "Enrolled" },
+                  ].map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onClick={() => handleSortChange(key)}
+                      className={cn(
+                        "flex items-center gap-1 rounded-md px-2 py-1 transition-colors",
+                        rosterSortBy === key
+                          ? "bg-primary/10 text-primary font-medium"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                      )}
+                    >
+                      {label}
+                      {rosterSortBy === key && (
+                        <ArrowUpDown className="h-3 w-3" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Bulk action toolbar */}
+                {selectedStudentIds.size > 0 && (
+                  <div className="flex items-center gap-3 rounded-md border bg-muted/50 px-3 py-2">
+                    <span className="text-sm font-medium">
+                      {selectedStudentIds.size} selected
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={handleBulkRemove}
+                      disabled={bulkRemoving}
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" />
+                      {bulkRemoving ? "Removing..." : "Remove Selected"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setSelectedStudentIds(new Set())}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
+
+                {/* Student list */}
                 {students.length === 0 ? (
-                  <p className="py-4 text-center text-sm text-muted-foreground">
-                    No students enrolled yet. Add students by email above.
-                  </p>
+                  <div className="py-8 text-center">
+                    <Users className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
+                    <p className="text-sm text-muted-foreground">
+                      {rosterSearch
+                        ? "No students match your search."
+                        : "No students enrolled yet. Add students by email, import, or share the join code."}
+                    </p>
+                  </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1">
+                    {/* Select all header */}
+                    <div className="flex items-center gap-3 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground border-b">
+                      <input
+                        type="checkbox"
+                        checked={
+                          students.length > 0 &&
+                          selectedStudentIds.size === students.length
+                        }
+                        onChange={handleToggleAll}
+                        className="rounded border-input"
+                        aria-label="Select all students"
+                      />
+                      <span className="flex-1">Student</span>
+                      <span className="hidden sm:block w-40">Email</span>
+                      <span className="hidden sm:block w-28">Enrolled</span>
+                      <span className="w-20 text-center">Status</span>
+                      <span className="w-8" />
+                    </div>
                     {students.map((s) => (
                       <div
                         key={s.id}
-                        className="flex items-center justify-between rounded-md border px-3 py-2"
+                        className={cn(
+                          "flex items-center gap-3 rounded-md border px-3 py-2 transition-colors",
+                          selectedStudentIds.has(s.student_id) && "bg-primary/5 border-primary/30",
+                        )}
                       >
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                        <input
+                          type="checkbox"
+                          checked={selectedStudentIds.has(s.student_id)}
+                          onChange={() => handleToggleStudent(s.student_id)}
+                          className="rounded border-input"
+                          aria-label={`Select ${s.student_name || "student"}`}
+                        />
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
                             {(s.student_name || "S").charAt(0).toUpperCase()}
                           </div>
-                          <span className="text-sm">
+                          <span className="text-sm truncate">
                             {s.student_name || `Student #${s.student_id}`}
                           </span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {!s.is_active && (
-                            <Badge variant="secondary">Inactive</Badge>
+                        <span className="hidden sm:block w-40 text-sm text-muted-foreground truncate">
+                          {s.student_email || "—"}
+                        </span>
+                        <span className="hidden sm:block w-28 text-xs text-muted-foreground">
+                          {new Date(s.enrolled_at).toLocaleDateString()}
+                        </span>
+                        <span className="w-20 text-center">
+                          {s.is_active ? (
+                            <Badge variant="success" className="text-xs">Active</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">Inactive</Badge>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRemoveStudent(s.student_id)}
-                            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                            aria-label={`Remove ${s.student_name || "student"}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveStudent(s.student_id)}
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                          aria-label={`Remove ${s.student_name || "student"}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* Pagination controls */}
+                {rosterTotalPages > 1 && (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2 border-t">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <span>Show</span>
+                      <select
+                        value={rosterPerPage}
+                        onChange={(e) => handlePerPageChange(Number(e.target.value))}
+                        className="rounded-md border bg-background px-2 py-1 text-sm"
+                      >
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                      <span>per page</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={rosterPage <= 1}
+                        onClick={() => handlePageChange(rosterPage - 1)}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      {Array.from({ length: Math.min(rosterTotalPages, 5) }, (_, i) => {
+                        let pageNum: number;
+                        if (rosterTotalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (rosterPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (rosterPage >= rosterTotalPages - 2) {
+                          pageNum = rosterTotalPages - 4 + i;
+                        } else {
+                          pageNum = rosterPage - 2 + i;
+                        }
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={rosterPage === pageNum ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => handlePageChange(pageNum)}
+                            className="h-8 w-8 p-0"
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={rosterPage >= rosterTotalPages}
+                        onClick={() => handlePageChange(rosterPage + 1)}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      Page {rosterPage} of {rosterTotalPages}
+                    </span>
                   </div>
                 )}
               </CardContent>
@@ -525,6 +1369,200 @@ const ClassManagement: React.FC = () => {
             </Card>
           </div>
         )}
+        {/* Import Students Modal */}
+        <Dialog
+          open={showImportModal}
+          onOpenChange={(open) => {
+            setShowImportModal(open);
+            if (!open) resetImportModal();
+          }}
+        >
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Import Students</DialogTitle>
+              <DialogDescription>
+                Add students via CSV/Excel file upload or by pasting email addresses.
+              </DialogDescription>
+            </DialogHeader>
+
+            {importResult ? (
+              <div className="space-y-4">
+                <div className="rounded-md border bg-muted/30 p-4 space-y-2">
+                  <h4 className="text-sm font-semibold text-foreground">Import Results</h4>
+                  {"enrolled" in importResult && Array.isArray((importResult as BulkEnrollResult).enrolled) ? (
+                    // BulkEnrollResult
+                    (() => {
+                      const r = importResult as BulkEnrollResult;
+                      return (
+                        <>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <span className="text-muted-foreground">Enrolled:</span>
+                            <span className="font-medium text-green-600">{r.enrolled.length}</span>
+                            <span className="text-muted-foreground">Already enrolled:</span>
+                            <span className="font-medium">{r.already_enrolled.length}</span>
+                            <span className="text-muted-foreground">Not found:</span>
+                            <span className="font-medium text-amber-600">{r.not_found.length}</span>
+                          </div>
+                          {r.not_found.length > 0 && (
+                            <div className="mt-2">
+                              <p className="text-xs font-medium text-muted-foreground mb-1">Not found emails:</p>
+                              <div className="max-h-24 overflow-auto rounded border bg-background px-2 py-1 text-xs">
+                                {r.not_found.join(", ")}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()
+                  ) : (
+                    // ImportResult (file-based)
+                    (() => {
+                      const r = importResult as ImportResult;
+                      return (
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <span className="text-muted-foreground">Total rows:</span>
+                          <span className="font-medium">{r.total_rows}</span>
+                          <span className="text-muted-foreground">Enrolled:</span>
+                          <span className="font-medium text-green-600">{r.enrolled}</span>
+                          <span className="text-muted-foreground">Skipped:</span>
+                          <span className="font-medium">{r.skipped}</span>
+                        </div>
+                      );
+                    })()
+                  )}
+                  {importResult.errors && importResult.errors.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-xs font-medium text-destructive mb-1">Errors:</p>
+                      <div className="max-h-24 overflow-auto rounded border border-destructive/20 bg-destructive/5 px-2 py-1 text-xs text-destructive">
+                        {importResult.errors.join("; ")}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button
+                    onClick={() => {
+                      setShowImportModal(false);
+                      resetImportModal();
+                    }}
+                  >
+                    Done
+                  </Button>
+                </DialogFooter>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Mode toggle */}
+                <div className="flex rounded-md border p-1">
+                  <button
+                    onClick={() => setImportMode("file")}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-2 rounded px-3 py-2 text-sm transition-colors",
+                      importMode === "file"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Upload File
+                  </button>
+                  <button
+                    onClick={() => setImportMode("email")}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-2 rounded px-3 py-2 text-sm transition-colors",
+                      importMode === "email"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Mail className="h-4 w-4" />
+                    Paste Emails
+                  </button>
+                </div>
+
+                {importMode === "file" ? (
+                  <div className="space-y-3">
+                    <div
+                      className={cn(
+                        "flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors",
+                        importFile
+                          ? "border-primary/50 bg-primary/5"
+                          : "border-muted-foreground/25 hover:border-muted-foreground/50",
+                      )}
+                    >
+                      {importFile ? (
+                        <div className="flex items-center gap-2 text-sm">
+                          <FileSpreadsheet className="h-5 w-5 text-primary" />
+                          <span className="font-medium">{importFile.name}</span>
+                          <button
+                            onClick={() => setImportFile(null)}
+                            className="ml-2 text-muted-foreground hover:text-destructive"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <Upload className="mb-2 h-8 w-8 text-muted-foreground/50" />
+                          <p className="text-sm text-muted-foreground">
+                            Drop a CSV or Excel file here
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Expected columns: name, email
+                          </p>
+                        </>
+                      )}
+                      <input
+                        type="file"
+                        accept=".csv,.xlsx"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) setImportFile(file);
+                        }}
+                        className={cn(
+                          "absolute inset-0 cursor-pointer opacity-0",
+                          importFile && "pointer-events-none",
+                        )}
+                        style={{ position: "relative" }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Textarea
+                      placeholder={"student1@example.com\nstudent2@example.com\nstudent3@example.com"}
+                      value={importEmails}
+                      onChange={(e) => setImportEmails(e.target.value)}
+                      rows={6}
+                      className="font-mono text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      One email address per line. Students must already have accounts.
+                    </p>
+                  </div>
+                )}
+
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline">Cancel</Button>
+                  </DialogClose>
+                  <Button
+                    onClick={handleImport}
+                    disabled={
+                      importLoading ||
+                      (importMode === "file" && !importFile) ||
+                      (importMode === "email" && !importEmails.trim())
+                    }
+                  >
+                    {importLoading ? "Importing..." : "Import"}
+                  </Button>
+                </DialogFooter>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <ToastContainer />
       </div>
     );
   }

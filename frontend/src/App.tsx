@@ -1,8 +1,11 @@
 import React, { Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { GoogleOAuthProvider } from "@react-oauth/google";
 import { AuthProvider, useAuth } from "./store/AuthContext";
 import Layout from "./components/common/Layout";
 import { Skeleton } from "./components/ui";
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
 // Lazy-loaded page components
 const Login = React.lazy(() => import("./pages/Login"));
@@ -18,6 +21,7 @@ const LearningPlansPage = React.lazy(() => import("./pages/LearningPlansPage"));
 const WorkspaceSetup = React.lazy(() => import("./pages/WorkspaceSetup"));
 const ClassManagement = React.lazy(() => import("./pages/ClassManagement"));
 const TaxonomyManager = React.lazy(() => import("./pages/TaxonomyManager"));
+const JoinClass = React.lazy(() => import("./pages/JoinClass"));
 
 function PageSkeleton() {
   return (
@@ -52,6 +56,7 @@ const DashboardRouter: React.FC = () => {
 
 const App: React.FC = () => {
   return (
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
     <AuthProvider>
       <BrowserRouter>
         <Suspense fallback={<PageSkeleton />}>
@@ -59,6 +64,7 @@ const App: React.FC = () => {
             <Route element={<Layout />}>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/join/:code?" element={<JoinClass />} />
               <Route
                 path="/workspace-setup"
                 element={
@@ -144,6 +150,7 @@ const App: React.FC = () => {
         </Suspense>
       </BrowserRouter>
     </AuthProvider>
+    </GoogleOAuthProvider>
   );
 };
 

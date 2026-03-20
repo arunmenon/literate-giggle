@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
 
+    # Frontend URL (used for QR code links)
+    FRONTEND_URL: str = "http://localhost:3000"
+
     # Web Research
     SERPER_API_KEY: Optional[str] = None
 
@@ -25,8 +28,15 @@ class Settings(BaseSettings):
     AI_MODEL_FAST: str = "gpt-5-mini"
     AI_MODEL_STANDARD: str = "gpt-5.4"
     AI_ENABLED: bool = True
-    AI_MAX_TOKENS_FAST: int = 1024
+    AI_MAX_TOKENS_FAST: int = 4096
     AI_MAX_TOKENS_STANDARD: int = 4096
+
+    # Voice AI (Sarvam)
+    SARVAM_API_KEY: Optional[str] = None
+    SARVAM_TTS_API_KEY: Optional[str] = None
+
+    # Google OAuth
+    GOOGLE_CLIENT_ID: Optional[str] = None
 
     # Boards and classes config
     SUPPORTED_BOARDS: list[str] = ["CBSE", "ICSE", "State Board"]

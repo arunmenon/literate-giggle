@@ -1,18 +1,25 @@
 """Authentication routes with workspace support."""
 
 import json
+import secrets
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
+from ...core.config import settings
 from ...core.security import (
     get_password_hash, verify_password,
-    create_workspace_token,
+    create_workspace_token, verify_google_id_token,
 )
 from ...models.user import User, StudentProfile, TeacherProfile, UserRole
-from ...models.workspace import Workspace, WorkspaceMember, generate_invite_code
-from ...schemas.user import UserRegister, LoginRequest, TokenResponse, UserResponse
+from ...models.workspace import Workspace, WorkspaceMember, ClassGroup, Enrollment, generate_invite_code
+from ...schemas.user import (
+    UserRegister, LoginRequest, TokenResponse, UserResponse, GoogleVerifyRequest,
+    ConsentGrantRequest, ConsentStatusResponse,
+)
 from ...schemas.exam import TeacherPreferenceUpdate, TeacherPreferenceResponse
 from ...schemas.workspace import JoinWorkspaceRequest, SwitchWorkspaceRequest
 from ..deps import get_current_user
@@ -69,6 +76,84 @@ async def _build_token_response(
     )
 
 
+async def _setup_workspace_and_class(
+    user: User,
+    role: str,
+    full_name: str,
+    invite_code: str | None,
+    class_join_code: str | None,
+    db: AsyncSession,
+) -> None:
+    """Create/join workspace and optionally enroll in a class. Shared by register and Google verify."""
+    if role == "teacher":
+        workspace = Workspace(
+            name=f"{full_name}'s Classroom",
+            type="personal",
+            owner_id=user.id,
+            invite_code=generate_invite_code(),
+        )
+        db.add(workspace)
+        await db.flush()
+        db.add(WorkspaceMember(workspace_id=workspace.id, user_id=user.id, role="owner"))
+        user.active_workspace_id = workspace.id
+        await db.flush()
+
+    elif role == "student" and invite_code:
+        ws_result = await db.execute(
+            select(Workspace).where(Workspace.invite_code == invite_code)
+        )
+        workspace = ws_result.scalar_one_or_none()
+        if not workspace:
+            raise HTTPException(status_code=404, detail="Invalid invite code")
+        db.add(WorkspaceMember(workspace_id=workspace.id, user_id=user.id, role="student"))
+        user.active_workspace_id = workspace.id
+        await db.flush()
+
+    elif role == "student":
+        workspace = Workspace(
+            name=f"{full_name}'s Study Space",
+            type="personal",
+            owner_id=user.id,
+            invite_code=generate_invite_code(),
+        )
+        db.add(workspace)
+        await db.flush()
+        db.add(WorkspaceMember(workspace_id=workspace.id, user_id=user.id, role="owner"))
+        user.active_workspace_id = workspace.id
+        await db.flush()
+
+    # Class join code: enroll student + auto-join class workspace
+    if class_join_code and role == "student":
+        cls_result = await db.execute(
+            select(ClassGroup).where(
+                ClassGroup.join_code == class_join_code,
+                ClassGroup.join_code_active == True,
+            )
+        )
+        class_group = cls_result.scalar_one_or_none()
+        if class_group:
+            sp_result = await db.execute(
+                select(StudentProfile).where(StudentProfile.user_id == user.id)
+            )
+            student_profile = sp_result.scalar_one_or_none()
+            if student_profile:
+                db.add(Enrollment(class_id=class_group.id, student_id=student_profile.id))
+                ws_check = await db.execute(
+                    select(WorkspaceMember).where(
+                        WorkspaceMember.workspace_id == class_group.workspace_id,
+                        WorkspaceMember.user_id == user.id,
+                    )
+                )
+                if not ws_check.scalar_one_or_none():
+                    db.add(WorkspaceMember(
+                        workspace_id=class_group.workspace_id,
+                        user_id=user.id,
+                        role="student",
+                    ))
+                user.active_workspace_id = class_group.workspace_id
+                await db.flush()
+
+
 @router.post("/register", response_model=TokenResponse, status_code=201)
 @limiter.limit("5/minute")
 async def register(request: Request, data: UserRegister, db: AsyncSession = Depends(get_db)):
@@ -82,6 +167,8 @@ async def register(request: Request, data: UserRegister, db: AsyncSession = Depe
         hashed_password=get_password_hash(data.user.password),
         full_name=data.user.full_name,
         role=UserRole(data.user.role),
+        guardian_name=data.guardian_name,
+        guardian_email=data.guardian_email,
     )
     db.add(user)
     await db.flush()
@@ -110,64 +197,14 @@ async def register(request: Request, data: UserRegister, db: AsyncSession = Depe
 
     await db.flush()
 
-    # Workspace handling
-    if data.user.role == "teacher":
-        # Auto-create personal workspace for teachers
-        workspace = Workspace(
-            name=f"{data.user.full_name}'s Classroom",
-            type="personal",
-            owner_id=user.id,
-            invite_code=generate_invite_code(),
-        )
-        db.add(workspace)
-        await db.flush()
-
-        membership = WorkspaceMember(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            role="owner",
-        )
-        db.add(membership)
-        user.active_workspace_id = workspace.id
-        await db.flush()
-
-    elif data.user.role == "student" and data.invite_code:
-        # Student with invite code: join existing workspace
-        ws_result = await db.execute(
-            select(Workspace).where(Workspace.invite_code == data.invite_code)
-        )
-        workspace = ws_result.scalar_one_or_none()
-        if not workspace:
-            raise HTTPException(status_code=404, detail="Invalid invite code")
-
-        membership = WorkspaceMember(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            role="student",
-        )
-        db.add(membership)
-        user.active_workspace_id = workspace.id
-        await db.flush()
-
-    elif data.user.role == "student":
-        # Student without invite code: create personal workspace for self-study
-        workspace = Workspace(
-            name=f"{data.user.full_name}'s Study Space",
-            type="personal",
-            owner_id=user.id,
-            invite_code=generate_invite_code(),
-        )
-        db.add(workspace)
-        await db.flush()
-
-        membership = WorkspaceMember(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            role="owner",
-        )
-        db.add(membership)
-        user.active_workspace_id = workspace.id
-        await db.flush()
+    await _setup_workspace_and_class(
+        user=user,
+        role=data.user.role,
+        full_name=data.user.full_name,
+        invite_code=data.invite_code,
+        class_join_code=data.class_join_code,
+        db=db,
+    )
 
     return await _build_token_response(user, db)
 
@@ -183,6 +220,109 @@ async def login(request: Request, data: LoginRequest, db: AsyncSession = Depends
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is deactivated")
+
+    return await _build_token_response(user, db)
+
+
+@router.post("/google/verify")
+@limiter.limit("10/minute")
+async def google_verify(
+    request: Request, data: GoogleVerifyRequest, db: AsyncSession = Depends(get_db)
+):
+    """Verify a Google ID token and login or register the user."""
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(
+            status_code=503,
+            detail="Google Sign-In is not configured on this server",
+        )
+
+    # Verify the Google JWT
+    try:
+        idinfo = verify_google_id_token(data.credential, settings.GOOGLE_CLIENT_ID)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid Google credential")
+
+    if not idinfo.get("email_verified"):
+        raise HTTPException(status_code=400, detail="Google email is not verified")
+
+    google_email = idinfo["email"]
+    google_name = idinfo.get("name", google_email.split("@")[0])
+    google_sub = idinfo["sub"]
+
+    # Check if user already exists
+    result = await db.execute(select(User).where(User.email == google_email))
+    user = result.scalar_one_or_none()
+
+    if user:
+        # Existing user -- link OAuth if not already linked
+        if not user.oauth_provider:
+            user.oauth_provider = "google"
+            user.oauth_id = google_sub
+            await db.flush()
+
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="Account is deactivated")
+
+        return await _build_token_response(user, db)
+
+    # New user -- role is required
+    if not data.role:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": "New user. Role selection required.",
+                "is_new_user": True,
+                "email": google_email,
+                "full_name": google_name,
+            },
+        )
+
+    if data.role not in ("student", "teacher"):
+        raise HTTPException(status_code=400, detail="Role must be 'student' or 'teacher'")
+
+    # Create the new user with a random password hash (cannot password-login)
+    user = User(
+        email=google_email,
+        hashed_password=get_password_hash(secrets.token_hex(32)),
+        full_name=google_name,
+        role=UserRole(data.role),
+        oauth_provider="google",
+        oauth_id=google_sub,
+    )
+    db.add(user)
+    await db.flush()
+
+    # Create profile
+    if data.role == "student" and data.student_profile:
+        db.add(StudentProfile(
+            user_id=user.id,
+            board=data.student_profile.board,
+            class_grade=data.student_profile.class_grade,
+            school_name=data.student_profile.school_name,
+            section=data.student_profile.section,
+            roll_number=data.student_profile.roll_number,
+            parent_email=data.student_profile.parent_email,
+        ))
+    elif data.role == "teacher" and data.teacher_profile:
+        db.add(TeacherProfile(
+            user_id=user.id,
+            board=data.teacher_profile.board,
+            subjects=json.dumps(data.teacher_profile.subjects),
+            classes=json.dumps(data.teacher_profile.classes),
+            institution=data.teacher_profile.institution,
+            employee_id=data.teacher_profile.employee_id,
+        ))
+    await db.flush()
+
+    # Setup workspace and class enrollment (reuses register logic)
+    await _setup_workspace_and_class(
+        user=user,
+        role=data.role,
+        full_name=google_name,
+        invite_code=data.invite_code,
+        class_join_code=data.class_join_code,
+        db=db,
+    )
 
     return await _build_token_response(user, db)
 
@@ -313,4 +453,60 @@ async def update_preferences(
         board=profile.board,
         subjects=json.loads(profile.subjects) if profile.subjects else None,
         classes=json.loads(profile.classes) if profile.classes else None,
+    )
+
+
+# ── DPDP Consent Endpoints (FR-005) ──────────────────────────────────────────
+
+
+@router.post("/consent", response_model=ConsentStatusResponse)
+async def grant_consent(
+    data: ConsentGrantRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Grant parental consent for voice features (DPDP compliance)."""
+    user.parental_consent_given = True
+    user.consent_given_at = datetime.now(timezone.utc)
+    user.guardian_name = data.guardian_name
+    user.guardian_email = data.guardian_email
+    user.voice_features_enabled = True
+    await db.flush()
+
+    return ConsentStatusResponse(
+        parental_consent_given=user.parental_consent_given,
+        consent_given_at=user.consent_given_at,
+        guardian_name=user.guardian_name,
+        voice_features_enabled=user.voice_features_enabled,
+    )
+
+
+@router.get("/consent/status", response_model=ConsentStatusResponse)
+async def get_consent_status(
+    user: User = Depends(get_current_user),
+):
+    """Check current consent status for voice features."""
+    return ConsentStatusResponse(
+        parental_consent_given=user.parental_consent_given,
+        consent_given_at=user.consent_given_at,
+        guardian_name=user.guardian_name,
+        voice_features_enabled=user.voice_features_enabled,
+    )
+
+
+@router.post("/consent/revoke", response_model=ConsentStatusResponse)
+async def revoke_consent(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Revoke parental consent, disabling voice features."""
+    user.parental_consent_given = False
+    user.voice_features_enabled = False
+    await db.flush()
+
+    return ConsentStatusResponse(
+        parental_consent_given=user.parental_consent_given,
+        consent_given_at=user.consent_given_at,
+        guardian_name=user.guardian_name,
+        voice_features_enabled=user.voice_features_enabled,
     )
