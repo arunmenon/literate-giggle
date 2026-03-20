@@ -197,6 +197,7 @@ async def get_paper(
             "choice_group": pq.choice_group,
             "question_type": q.question_type.value,
             "question_text": q.question_text,
+            "question_image_url": q.question_image_url,
             "mcq_options": q.mcq_options,
             "difficulty": q.difficulty.value,
             "topic": q.topic,

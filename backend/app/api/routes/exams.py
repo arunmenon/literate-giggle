@@ -1,10 +1,13 @@
 """Exam session routes (Simulation) with workspace scoping."""
 
+import os
+import uuid
+import pathlib
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, aliased
 
 from ...core.database import get_db
 from ...models.user import User, UserRole, StudentProfile
@@ -12,14 +15,79 @@ from ...models.exam import (
     QuestionPaper, PaperQuestion, ExamSession, StudentAnswer,
     PaperStatus, ExamSessionStatus,
 )
-from ...models.workspace import ExamAssignment, Enrollment, ClassGroup
+from ...models.workspace import ExamAssignment, Enrollment, ClassGroup, Workspace
 from ...schemas.exam import (
     StartExamRequest, SubmitAnswerRequest, AutoSaveRequest,
-    ExamSessionResponse, ExamSessionDetail,
+    ExamSessionResponse, ExamSessionDetail, CrossWorkspaceExam,
 )
 from ..deps import get_current_user, get_current_student, get_current_workspace
 
+WORKSPACE_COLORS = [
+    "#3B82F6", "#10B981", "#8B5CF6", "#F59E0B",
+    "#EF4444", "#EC4899", "#06B6D4", "#84CC16",
+]
+
 router = APIRouter(prefix="/exams", tags=["Exam Sessions (Simulation)"])
+
+
+@router.get("/all-workspaces", response_model=list[CrossWorkspaceExam])
+async def list_cross_workspace_exams(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    student: StudentProfile = Depends(get_current_student),
+):
+    """Return upcoming exams across ALL workspaces the student belongs to.
+
+    Joins through: student enrollments -> class groups -> exam assignments -> papers -> workspaces.
+    Includes teacher and workspace attribution for each exam.
+    Limited to 50 most recent active assignments.
+    """
+    now = datetime.now(timezone.utc)
+    OwnerUser = aliased(User)
+
+    result = await db.execute(
+        select(ExamAssignment, QuestionPaper, ClassGroup, Workspace, OwnerUser)
+        .join(QuestionPaper, ExamAssignment.paper_id == QuestionPaper.id)
+        .join(ClassGroup, ExamAssignment.class_id == ClassGroup.id)
+        .join(Workspace, ClassGroup.workspace_id == Workspace.id)
+        .join(OwnerUser, Workspace.owner_id == OwnerUser.id)
+        .join(Enrollment, Enrollment.class_id == ClassGroup.id)
+        .where(
+            Enrollment.student_id == student.id,
+            Enrollment.is_active == True,
+            ExamAssignment.status == "active",
+            or_(
+                ExamAssignment.end_at.is_(None),
+                ExamAssignment.end_at >= now,
+            ),
+        )
+        .order_by(ExamAssignment.start_at.asc().nulls_last(), ExamAssignment.created_at.desc())
+        .limit(50)
+    )
+    rows = result.all()
+
+    return [
+        CrossWorkspaceExam(
+            assignment_id=assignment.id,
+            paper_id=paper.id,
+            paper_title=paper.title,
+            subject=paper.subject,
+            total_marks=paper.total_marks,
+            duration_minutes=paper.duration_minutes,
+            class_id=cls.id,
+            class_name=cls.name,
+            workspace_id=ws.id,
+            workspace_name=ws.name,
+            teacher_name=owner.full_name,
+            color=WORKSPACE_COLORS[ws.id % len(WORKSPACE_COLORS)],
+            status=assignment.status,
+            label=assignment.label,
+            start_at=assignment.start_at,
+            end_at=assignment.end_at,
+            is_practice=assignment.is_practice,
+        )
+        for assignment, paper, cls, ws, owner in rows
+    ]
 
 
 @router.post("/start", response_model=ExamSessionResponse, status_code=201)
@@ -117,6 +185,10 @@ async def auto_save_answers(
         if existing:
             existing.answer_text = ans_data.answer_text
             existing.selected_option = ans_data.selected_option
+            if ans_data.answer_image_url is not None:
+                existing.answer_image_url = ans_data.answer_image_url
+            if ans_data.canvas_state is not None:
+                existing.canvas_state = ans_data.canvas_state
             existing.auto_saved_at = datetime.now(timezone.utc)
         else:
             answer = StudentAnswer(
@@ -124,6 +196,8 @@ async def auto_save_answers(
                 paper_question_id=ans_data.paper_question_id,
                 answer_text=ans_data.answer_text,
                 selected_option=ans_data.selected_option,
+                answer_image_url=ans_data.answer_image_url,
+                canvas_state=ans_data.canvas_state,
                 auto_saved_at=datetime.now(timezone.utc),
             )
             db.add(answer)
@@ -229,6 +303,8 @@ async def get_exam_session(
             "paper_question_id": a.paper_question_id,
             "answer_text": a.answer_text,
             "selected_option": a.selected_option,
+            "answer_image_url": a.answer_image_url,
+            "canvas_state": a.canvas_state,
             "is_flagged": a.is_flagged,
             "time_spent_seconds": a.time_spent_seconds,
         }
@@ -282,3 +358,78 @@ async def list_my_exams(
         .order_by(ExamSession.created_at.desc())
     )
     return result.scalars().all()
+
+
+# ── Answer Image Upload ──
+
+ANSWER_IMAGE_DIR = os.path.join("uploads", "images", "answers")
+MAX_ANSWER_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
+
+
+@router.post("/{session_id}/upload-answer-image")
+async def upload_answer_image(
+    session_id: int,
+    file: UploadFile = File(...),
+    paper_question_id: int = Form(...),
+    db: AsyncSession = Depends(get_db),
+    student: StudentProfile = Depends(get_current_student),
+):
+    """Upload a diagram answer image (PNG) for a specific question in an exam session."""
+    # Verify session ownership and status
+    session = await db.get(ExamSession, session_id)
+    if not session or session.student_id != student.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status != ExamSessionStatus.IN_PROGRESS:
+        raise HTTPException(status_code=400, detail="Session is not in progress")
+
+    # Validate file type (PNG only for canvas exports)
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+    ext = pathlib.Path(file.filename).suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type '{ext}' not allowed. Accepted: .png, .jpg, .jpeg",
+        )
+
+    # Read and validate size
+    content = await file.read()
+    if len(content) > MAX_ANSWER_IMAGE_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (max 5MB)")
+
+    # Save with UUID filename
+    os.makedirs(ANSWER_IMAGE_DIR, exist_ok=True)
+    safe_name = f"{uuid.uuid4().hex}_{session_id}_{paper_question_id}{ext}"
+    file_path = os.path.join(ANSWER_IMAGE_DIR, safe_name)
+
+    # Path traversal protection
+    resolved = pathlib.Path(file_path).resolve()
+    upload_dir_resolved = pathlib.Path(ANSWER_IMAGE_DIR).resolve()
+    if not str(resolved).startswith(str(upload_dir_resolved)):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    image_url = f"/api/uploads/images/answers/{safe_name}"
+
+    # Upsert the answer record with image URL
+    result = await db.execute(
+        select(StudentAnswer).where(
+            StudentAnswer.session_id == session_id,
+            StudentAnswer.paper_question_id == paper_question_id,
+        )
+    )
+    answer = result.scalar_one_or_none()
+    if answer:
+        answer.answer_image_url = image_url
+    else:
+        answer = StudentAnswer(
+            session_id=session_id,
+            paper_question_id=paper_question_id,
+            answer_image_url=image_url,
+        )
+        db.add(answer)
+    await db.flush()
+
+    return {"image_url": image_url, "paper_question_id": paper_question_id}

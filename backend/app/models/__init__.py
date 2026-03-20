@@ -10,7 +10,7 @@ from .exam import (
     StudentAnswer,
 )
 from .evaluation import Evaluation, QuestionEvaluation, RubricTemplate
-from .learning import LearningPlan, LearningObjective, TopicMastery
+from .learning import LearningPlan, LearningObjective, TopicMastery, VoiceTutorSession
 from .curriculum import (
     Board,
     Curriculum,
@@ -45,6 +45,7 @@ __all__ = [
     "LearningPlan",
     "LearningObjective",
     "TopicMastery",
+    "VoiceTutorSession",
     "Board",
     "Curriculum",
     "CurriculumSubject",

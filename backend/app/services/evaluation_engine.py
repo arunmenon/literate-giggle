@@ -211,6 +211,84 @@ def evaluate_question(question: Question, answer: StudentAnswer) -> dict:
     return result
 
 
+async def evaluate_question_async(
+    question: Question,
+    answer: StudentAnswer,
+    board: str = "CBSE",
+    subject: str = "Science",
+    class_grade: int = 10,
+) -> dict:
+    """Async evaluation that handles diagram questions with vision-based evaluation.
+
+    For DIAGRAM question type:
+    - If answer has answer_image_url, use vision-based AI evaluation
+    - If answer has only answer_text, fall back to keyword-based evaluation
+    - If both exist, combine scores (70% image, 30% text)
+
+    For all other question types, delegates to the sync evaluate_question().
+
+    IMPORTANT: This is a SEPARATE function from evaluate_question() -- the sync
+    function is NOT modified to preserve backward compatibility.
+    """
+    if question.question_type != QuestionType.DIAGRAM:
+        return evaluate_question(question, answer)
+
+    from .ai_evaluator import evaluate_diagram_answer
+
+    has_image = bool(answer.answer_image_url)
+    has_text = bool(answer.answer_text)
+
+    image_result = None
+    text_result = None
+
+    if has_image:
+        image_result = await evaluate_diagram_answer(
+            question, answer,
+            board=board, subject=subject, class_grade=class_grade,
+        )
+
+    if has_text:
+        text_result = evaluate_keyword_based(question, answer)
+
+    # Combine results based on what's available
+    if image_result and text_result:
+        # Weighted combination: 70% image, 30% text
+        combined_marks = round(
+            image_result["marks_obtained"] * 0.7 + text_result["marks_obtained"] * 0.3,
+            1,
+        )
+        combined_marks = min(combined_marks, question.marks)
+        return {
+            "marks_obtained": combined_marks,
+            "marks_possible": question.marks,
+            "feedback": (
+                f"Diagram evaluation: {image_result['feedback']} "
+                f"Text evaluation: {text_result['feedback']}"
+            ),
+            "keywords_found": text_result.get("keywords_found", []),
+            "keywords_missing": text_result.get("keywords_missing", []),
+            "improvement_hint": text_result.get("improvement_hint", ""),
+            "rubric_scores": image_result.get("rubric_scores"),
+            "confidence": 0.85,
+            "evaluation_method": "ai_vision_hybrid",
+        }
+    elif image_result:
+        return image_result
+    elif text_result:
+        return text_result
+    else:
+        # No answer at all
+        return {
+            "marks_obtained": 0.0,
+            "marks_possible": question.marks,
+            "feedback": "No diagram or text answer provided.",
+            "keywords_found": [],
+            "keywords_missing": list(question.answer_keywords or []),
+            "improvement_hint": "Please draw the diagram and label all required parts.",
+            "evaluation_method": "fallback",
+        }
+
+
 def calculate_grade(percentage: float) -> str:
     """Calculate grade based on CBSE/ICSE grading system."""
     if percentage >= 91:

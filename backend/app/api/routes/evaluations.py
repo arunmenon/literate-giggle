@@ -14,7 +14,7 @@ from ...core.database import get_db, async_session
 from ...models.user import User, UserRole, StudentProfile
 from ...models.exam import (
     ExamSession, ExamSessionStatus, StudentAnswer,
-    PaperQuestion, Question, QuestionPaper,
+    PaperQuestion, Question, QuestionPaper, QuestionType,
 )
 from ...models.evaluation import Evaluation, QuestionEvaluation
 from ...schemas.evaluation import (
@@ -22,7 +22,7 @@ from ...schemas.evaluation import (
     QuestionEvaluationResponse, EvaluationSummary,
 )
 from ...services.evaluation_engine import (
-    evaluate_question, calculate_grade, generate_recommendations,
+    evaluate_question, evaluate_question_async, calculate_grade, generate_recommendations,
 )
 from ...services.ai_evaluator import evaluate_with_ai, generate_ai_recommendations
 from ...services.learning_plan_generator import update_topic_mastery
@@ -38,12 +38,26 @@ async def _evaluate_single_answer(
     paper: QuestionPaper,
     method: str,
 ) -> dict:
-    """Evaluate a single answer, trying AI first and falling back to rubric."""
+    """Evaluate a single answer, trying AI first and falling back to rubric.
+
+    For diagram questions with image answers, uses vision-based evaluation
+    via evaluate_question_async() which handles image + text combination.
+    """
     eval_result = None
     evaluation_method = "rubric"
 
+    # Diagram questions with image answers use vision-based evaluation
+    if question.question_type == QuestionType.DIAGRAM and answer.answer_image_url:
+        eval_result = await evaluate_question_async(
+            question, answer,
+            board=paper.board, subject=paper.subject,
+            class_grade=paper.class_grade,
+        )
+        if eval_result is not None:
+            evaluation_method = eval_result.get("evaluation_method", "ai_vision")
+
     # AI-first: try AI evaluation for all non-rubric methods (ai is default)
-    if method in ("ai", "hybrid"):
+    if eval_result is None and method in ("ai", "hybrid"):
         eval_result = await evaluate_with_ai(
             question, answer,
             board=paper.board, subject=paper.subject,
