@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useAuth } from "../../store/AuthContext";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/Button";
+import TeacherSwitcher from "../TeacherSwitcher";
 import {
   LayoutDashboard,
   FileText,
@@ -164,21 +165,25 @@ const Layout: React.FC = () => {
           </button>
         </div>
 
-        {/* Workspace indicator */}
-        {workspaceName && (
-          <div className="px-4 py-3 border-b border-white/10">
-            <p className="text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider">
-              Workspace
-            </p>
-            <p className="mt-0.5 text-sm font-medium truncate">
-              {workspaceName}
-            </p>
-            {workspaceRole && (
-              <p className="text-xs text-sidebar-foreground/50 capitalize">
-                {workspaceRole}
+        {/* Workspace indicator: students get TeacherSwitcher, teachers get static label */}
+        {role === "student" ? (
+          <TeacherSwitcher onSwitch={() => setSidebarOpen(false)} />
+        ) : (
+          workspaceName && (
+            <div className="px-4 py-3 border-b border-white/10">
+              <p className="text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider">
+                Workspace
               </p>
-            )}
-          </div>
+              <p className="mt-0.5 text-sm font-medium truncate">
+                {workspaceName}
+              </p>
+              {workspaceRole && (
+                <p className="text-xs text-sidebar-foreground/50 capitalize">
+                  {workspaceRole}
+                </p>
+              )}
+            </div>
+          )
         )}
 
         {/* Navigation */}

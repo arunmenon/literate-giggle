@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { GoogleLogin } from "@react-oauth/google";
 import { authAPI } from "../services/api";
 import { useAuth } from "../store/AuthContext";
 import {
@@ -12,6 +13,8 @@ import {
   Input,
   Button,
 } from "../components/ui";
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -36,6 +39,34 @@ const Login: React.FC = () => {
     }
   };
 
+  const handleGoogleSuccess = async (credentialResponse: any) => {
+    setError("");
+    setLoading(true);
+    try {
+      const { data } = await authAPI.googleVerify({
+        credential: credentialResponse.credential,
+      });
+      login(data);
+      navigate("/");
+    } catch (err: any) {
+      const status = err.response?.status;
+      const responseData = err.response?.data;
+      if (status === 422 && responseData?.is_new_user) {
+        // New user -- redirect to register with Google credential info
+        const params = new URLSearchParams({
+          google_credential: credentialResponse.credential,
+          email: responseData.email || "",
+          name: responseData.full_name || "",
+        });
+        navigate(`/register?${params.toString()}`);
+      } else {
+        setError(responseData?.detail || "Google sign-in failed");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="flex min-h-[80vh] items-center justify-center px-4">
       <Card className="w-full max-w-md">
@@ -53,6 +84,31 @@ const Login: React.FC = () => {
               {error}
             </div>
           )}
+
+          {/* Google Sign-In */}
+          {GOOGLE_CLIENT_ID && (
+            <>
+              <div className="flex justify-center">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => setError("Google sign-in failed. Please try again.")}
+                  theme="outline"
+                  size="large"
+                  width="100%"
+                  text="signin_with"
+                />
+              </div>
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card px-2 text-muted-foreground">or</span>
+                </div>
+              </div>
+            </>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <label

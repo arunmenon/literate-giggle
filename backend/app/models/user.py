@@ -34,6 +34,17 @@ class User(Base):
     # Tracks which workspace the user is currently operating in (NOT membership FK)
     active_workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=True)
 
+    # OAuth fields (nullable -- email/password users have NULL)
+    oauth_provider = Column(String(50), nullable=True)   # "google", "microsoft", etc.
+    oauth_id = Column(String(255), nullable=True)         # Provider's unique user ID
+
+    # DPDP consent fields (FR-005 Voice AI)
+    parental_consent_given = Column(Boolean, default=False)
+    consent_given_at = Column(DateTime, nullable=True)
+    guardian_name = Column(String(255), nullable=True)
+    guardian_email = Column(String(255), nullable=True)
+    voice_features_enabled = Column(Boolean, default=False)
+
     student_profile = relationship("StudentProfile", back_populates="user", uselist=False)
     teacher_profile = relationship("TeacherProfile", back_populates="user", uselist=False)
     active_workspace = relationship("Workspace", foreign_keys=[active_workspace_id])

@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { dashboardAPI, learningAPI } from "../services/api";
+import { dashboardAPI, learningAPI, examAPI } from "../services/api";
 import { useAuth } from "../store/AuthContext";
 import type {
   StudentDashboard as DashboardData,
   TopicMastery,
   LearningPlan,
+  CrossWorkspaceExam,
 } from "../types";
+import TeacherBadge from "../components/TeacherBadge";
 import {
   Card,
   CardContent,
@@ -95,6 +97,9 @@ const StudentDashboard: React.FC = () => {
 
   // Extended dashboard data from backend (task #4)
   const [upcomingExams, setUpcomingExams] = useState<any[]>([]);
+  const [crossWorkspaceExams, setCrossWorkspaceExams] = useState<
+    CrossWorkspaceExam[]
+  >([]);
   const [recommendedAction, setRecommendedAction] = useState<string>("");
   const [weeklyProgress, setWeeklyProgress] = useState<number | null>(null);
 
@@ -103,7 +108,8 @@ const StudentDashboard: React.FC = () => {
       dashboardAPI.student().catch(() => ({ data: null })),
       learningAPI.getMastery().catch(() => ({ data: [] })),
       learningAPI.listPlans().catch(() => ({ data: [] })),
-    ]).then(([dashRes, masteryRes, plansRes]) => {
+      examAPI.getAllWorkspaces().catch(() => ({ data: [] })),
+    ]).then(([dashRes, masteryRes, plansRes, crossWsRes]) => {
       const dashData = dashRes.data;
       setData(dashData);
       // Extract new action-oriented fields from backend
@@ -114,6 +120,7 @@ const StudentDashboard: React.FC = () => {
       }
       setMastery(masteryRes.data || []);
       setPlans(plansRes.data || []);
+      setCrossWorkspaceExams(crossWsRes.data || []);
       setLoading(false);
     });
   }, []);
@@ -202,6 +209,12 @@ const StudentDashboard: React.FC = () => {
       ? mastery.reduce((w, c) => (c.avg_score_pct < w.avg_score_pct ? c : w))
       : null;
 
+  // Use cross-workspace exams count when available for the action card
+  const totalUpcomingCount =
+    crossWorkspaceExams.length > 0
+      ? crossWorkspaceExams.length
+      : upcomingExams.length;
+
   const activePlans = plans.filter((p) => p.is_active);
 
   return (
@@ -267,13 +280,19 @@ const StudentDashboard: React.FC = () => {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold">
-                  {upcomingExams.length > 0
-                    ? `${upcomingExams.length} upcoming exam${upcomingExams.length !== 1 ? "s" : ""}`
+                  {totalUpcomingCount > 0
+                    ? `${totalUpcomingCount} upcoming exam${totalUpcomingCount !== 1 ? "s" : ""}`
                     : "No upcoming exams"}
                 </p>
-                {upcomingExams.length > 0 && upcomingExams[0].start_at ? (
+                {totalUpcomingCount > 0 &&
+                (crossWorkspaceExams[0]?.start_at ||
+                  upcomingExams[0]?.start_at) ? (
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Next in {formatCountdown(upcomingExams[0].start_at)}
+                    Next in{" "}
+                    {formatCountdown(
+                      crossWorkspaceExams[0]?.start_at ||
+                        upcomingExams[0]?.start_at,
+                    )}
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -282,7 +301,7 @@ const StudentDashboard: React.FC = () => {
                 )}
               </div>
             </div>
-            {upcomingExams.length > 0 && (
+            {totalUpcomingCount > 0 && (
               <Link
                 to="/exams"
                 className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
@@ -366,11 +385,11 @@ const StudentDashboard: React.FC = () => {
         </Card>
       </div>
 
-      {/* ── Upcoming Exams List ── */}
-      {upcomingExams.length > 0 && (
+      {/* ── Upcoming Exams List (cross-workspace aggregated) ── */}
+      {(crossWorkspaceExams.length > 0 || upcomingExams.length > 0) && (
         <DataCard
           title="Upcoming Exams"
-          description="Exams assigned to your classes"
+          description="Exams from all your teachers"
           icon={<Calendar className="h-4 w-4" />}
           action={
             <Link
@@ -382,22 +401,45 @@ const StudentDashboard: React.FC = () => {
           }
         >
           <div className="space-y-2">
-            {upcomingExams.slice(0, 5).map((exam: any, i: number) => (
+            {(crossWorkspaceExams.length > 0
+              ? crossWorkspaceExams.slice(0, 5)
+              : upcomingExams.slice(0, 5)
+            ).map((exam: any, i: number) => (
               <div
-                key={i}
+                key={exam.assignment_id || i}
                 className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-muted/30"
+                style={{
+                  borderLeftWidth: exam.color ? 3 : undefined,
+                  borderLeftColor: exam.color || undefined,
+                }}
               >
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">
                     {exam.paper_title || exam.title || "Exam"}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {exam.class_name && (
-                      <span>{exam.class_name} &middot; </span>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    {exam.teacher_name && exam.color && (
+                      <TeacherBadge
+                        teacherName={exam.teacher_name}
+                        color={exam.color}
+                      />
                     )}
-                    {exam.label && <span>{exam.label} &middot; </span>}
-                    {exam.is_practice && "Practice"}
-                  </p>
+                    {exam.class_name && (
+                      <span className="text-xs text-muted-foreground">
+                        {exam.class_name}
+                      </span>
+                    )}
+                    {exam.label && (
+                      <span className="text-xs text-muted-foreground">
+                        {exam.label}
+                      </span>
+                    )}
+                    {exam.is_practice && (
+                      <span className="text-xs text-muted-foreground">
+                        Practice
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 ml-3">
                   {exam.start_at && (

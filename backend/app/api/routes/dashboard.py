@@ -5,6 +5,7 @@ from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from typing import Optional
 
 from ...core.database import get_db
@@ -12,9 +13,14 @@ from ...models.user import User, StudentProfile, UserRole
 from ...models.exam import ExamSession, QuestionPaper, ExamSessionStatus
 from ...models.evaluation import Evaluation
 from ...models.learning import LearningPlan, TopicMastery
-from ...models.workspace import ExamAssignment, Enrollment, ClassGroup
+from ...models.workspace import ExamAssignment, Enrollment, ClassGroup, Workspace
 from ...schemas.user import StudentDashboard
 from ..deps import get_current_user, get_current_student, require_teacher_or_admin, get_current_workspace
+
+WORKSPACE_COLORS = [
+    "#3B82F6", "#10B981", "#8B5CF6", "#F59E0B",
+    "#EF4444", "#EC4899", "#06B6D4", "#84CC16",
+]
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -83,12 +89,15 @@ async def student_dashboard(
     )
     active_plans = plan_count_result.scalar()
 
-    # Upcoming exams from ExamAssignment
+    # Upcoming exams from ExamAssignment -- cross-workspace with teacher attribution
     now = datetime.now(timezone.utc)
+    OwnerUser = aliased(User)
     upcoming_result = await db.execute(
-        select(ExamAssignment, QuestionPaper, ClassGroup)
+        select(ExamAssignment, QuestionPaper, ClassGroup, Workspace, OwnerUser)
         .join(QuestionPaper, ExamAssignment.paper_id == QuestionPaper.id)
         .join(ClassGroup, ExamAssignment.class_id == ClassGroup.id)
+        .join(Workspace, ClassGroup.workspace_id == Workspace.id)
+        .join(OwnerUser, Workspace.owner_id == OwnerUser.id)
         .join(Enrollment, ExamAssignment.class_id == Enrollment.class_id)
         .where(
             Enrollment.student_id == student.id,
@@ -116,8 +125,12 @@ async def student_dashboard(
             "end_at": assignment.end_at.isoformat() if assignment.end_at else None,
             "is_practice": assignment.is_practice,
             "label": assignment.label,
+            "workspace_id": ws.id,
+            "workspace_name": ws.name,
+            "teacher_name": owner.full_name,
+            "color": WORKSPACE_COLORS[ws.id % len(WORKSPACE_COLORS)],
         }
-        for assignment, paper, cls in upcoming_rows
+        for assignment, paper, cls, ws, owner in upcoming_rows
     ]
 
     # Weekly progress

@@ -1,18 +1,23 @@
 """Workspace management routes."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
 from ...core.rate_limit import limiter
-from ...models.user import User
-from ...models.workspace import Workspace, WorkspaceMember, generate_invite_code
+from ...models.user import User, StudentProfile
+from ...models.workspace import Workspace, WorkspaceMember, ClassGroup, Enrollment, generate_invite_code
 from ...schemas.workspace import (
     WorkspaceCreate, WorkspaceResponse, WorkspaceMemberResponse,
     WorkspaceSummary, JoinWorkspaceRequest,
 )
 from ..deps import get_current_user, require_workspace_admin, get_current_workspace
+
+WORKSPACE_COLORS = [
+    "#3B82F6", "#10B981", "#8B5CF6", "#F59E0B",
+    "#EF4444", "#EC4899", "#06B6D4", "#84CC16",
+]
 
 router = APIRouter(prefix="/workspace", tags=["Workspace"])
 
@@ -158,19 +163,88 @@ async def list_my_workspaces(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """List all workspaces the user belongs to (for workspace switcher)."""
+    """List all workspaces the user belongs to (for workspace switcher).
+
+    Returns enriched data: owner name, class count, primary subject, and
+    a deterministic color for each workspace.
+    """
     result = await db.execute(
         select(WorkspaceMember, Workspace)
         .join(Workspace, WorkspaceMember.workspace_id == Workspace.id)
         .where(WorkspaceMember.user_id == user.id)
     )
     rows = result.all()
+
+    if not rows:
+        return []
+
+    workspace_ids = [ws.id for _, ws in rows]
+    owner_ids = list({ws.owner_id for _, ws in rows})
+
+    # Batch-fetch owner names
+    owner_result = await db.execute(
+        select(User.id, User.full_name).where(User.id.in_(owner_ids))
+    )
+    owner_names = {uid: name for uid, name in owner_result.all()}
+
+    # Batch-fetch class counts per workspace for the student
+    # For students, count only classes they are enrolled in; for others, count all classes.
+    student_profile = None
+    if user.role and user.role.value == "student":
+        sp_result = await db.execute(
+            select(StudentProfile).where(StudentProfile.user_id == user.id)
+        )
+        student_profile = sp_result.scalar_one_or_none()
+
+    if student_profile:
+        class_counts_query = (
+            select(
+                ClassGroup.workspace_id,
+                func.count(ClassGroup.id).label("cnt"),
+            )
+            .join(Enrollment, Enrollment.class_id == ClassGroup.id)
+            .where(
+                ClassGroup.workspace_id.in_(workspace_ids),
+                Enrollment.student_id == student_profile.id,
+                Enrollment.is_active == True,
+            )
+            .group_by(ClassGroup.workspace_id)
+        )
+    else:
+        class_counts_query = (
+            select(
+                ClassGroup.workspace_id,
+                func.count(ClassGroup.id).label("cnt"),
+            )
+            .where(ClassGroup.workspace_id.in_(workspace_ids))
+            .group_by(ClassGroup.workspace_id)
+        )
+
+    cc_result = await db.execute(class_counts_query)
+    class_counts = {ws_id: cnt for ws_id, cnt in cc_result.all()}
+
+    # Batch-fetch primary subject (subject of first class in each workspace)
+    # SQLite doesn't support DISTINCT ON, so pick the first class per workspace manually
+    all_classes_result = await db.execute(
+        select(ClassGroup.workspace_id, ClassGroup.subject, ClassGroup.id)
+        .where(ClassGroup.workspace_id.in_(workspace_ids))
+        .order_by(ClassGroup.id.asc())
+    )
+    primary_subjects: dict[int, str | None] = {}
+    for ws_id, subject, _ in all_classes_result.all():
+        if ws_id not in primary_subjects:
+            primary_subjects[ws_id] = subject
+
     return [
         WorkspaceSummary(
             id=ws.id,
             name=ws.name,
             type=ws.type,
             role=member.role,
+            owner_name=owner_names.get(ws.owner_id),
+            class_count=class_counts.get(ws.id, 0),
+            primary_subject=primary_subjects.get(ws.id),
+            color=WORKSPACE_COLORS[ws.id % len(WORKSPACE_COLORS)],
         )
         for member, ws in rows
     ]

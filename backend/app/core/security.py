@@ -48,3 +48,26 @@ def create_workspace_token(
 
 def decode_access_token(token: str) -> dict:
     return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+
+
+def verify_google_id_token(token: str, client_id: str) -> dict:
+    """
+    Verify a Google ID token from the frontend credential flow.
+
+    Returns the decoded token payload containing:
+    - sub: Google's unique user ID
+    - email: User's email address
+    - email_verified: bool
+    - name: Full name
+    - picture: Profile picture URL
+
+    Raises ValueError if token is invalid, expired, or audience mismatch.
+    """
+    from google.oauth2 import id_token
+    from google.auth.transport import requests as google_requests
+
+    return id_token.verify_oauth2_token(
+        token,
+        google_requests.Request(),
+        client_id,
+    )

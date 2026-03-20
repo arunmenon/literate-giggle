@@ -77,10 +77,10 @@ const WorkspaceSetup: React.FC = () => {
     setLoading(true);
     try {
       const { data } = await workspaceAPI.joinByCode({ invite_code: code });
-      setJoinedWorkspaceName(data.workspace_name || "Classroom");
-      // Switch to the joined workspace
+      setJoinedWorkspaceName(data.name || data.workspace_name || "Classroom");
+      // Switch to the joined workspace (join returns workspace object with `id`, not `workspace_id`)
       const loginResponse = await workspaceAPI.switchWorkspace({
-        workspace_id: data.workspace_id,
+        workspace_id: data.id ?? data.workspace_id,
       });
       login(loginResponse.data);
       setStep("success");
@@ -88,7 +88,10 @@ const WorkspaceSetup: React.FC = () => {
       if (err.response?.status === 404) {
         setError("Invalid invite code. Please check and try again.");
       } else {
-        setError(err.response?.data?.detail || "Failed to join workspace");
+        const detail = err.response?.data?.detail;
+        setError(
+          typeof detail === "string" ? detail : "Failed to join workspace",
+        );
       }
     } finally {
       setLoading(false);
