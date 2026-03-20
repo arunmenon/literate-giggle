@@ -93,6 +93,8 @@ class QuestionEvaluation(Base):
     # AI evaluation metadata
     confidence = Column(Float)  # AI confidence score 0.0-1.0
     evaluation_method = Column(String(20))  # "ai" or "rubric"
+    # Teacher audio feedback (voice note URL)
+    audio_feedback_url = Column(String(500), nullable=True)
 
     evaluation = relationship("Evaluation", back_populates="question_evaluations")
     student_answer = relationship("StudentAnswer", back_populates="question_evaluation")

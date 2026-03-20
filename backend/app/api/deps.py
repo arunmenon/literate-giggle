@@ -73,3 +73,13 @@ def require_workspace_admin(user: User = Depends(get_current_user)) -> User:
             detail="Workspace owner or admin access required",
         )
     return user
+
+
+def require_voice_consent(user: User = Depends(get_current_user)) -> User:
+    """Require parental consent and voice features enabled (DPDP compliance)."""
+    if not user.parental_consent_given or not user.voice_features_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Parental consent required for voice features",
+        )
+    return user

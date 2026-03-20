@@ -117,3 +117,19 @@ class TopicMastery(Base):
     )
 
     student = relationship("StudentProfile", back_populates="topic_masteries")
+
+
+class VoiceTutorSession(Base):
+    """Voice-based AI tutoring session. Stores text transcript only (no audio -- DPDP)."""
+
+    __tablename__ = "voice_tutor_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    topic = Column(String(255), nullable=True)
+    transcript = Column(JSON, default=list)
+    # Example: [{"role": "student", "text": "...", "timestamp": "..."}, {"role": "tutor", "text": "...", "timestamp": "..."}]
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    ended_at = Column(DateTime, nullable=True)
+
+    user = relationship("User")

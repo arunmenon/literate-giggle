@@ -21,6 +21,8 @@ import {
 import { MasteryHeatmap } from "../components/charts/MasteryHeatmap";
 import { ProgressChart } from "../components/charts/ProgressChart";
 import { AIChat } from "../components/AIChat";
+import { VoiceTutor } from "../components/VoiceTutor";
+import { useConsentStatus } from "../hooks/useConsentStatus";
 import { cn, getMasteryHex, formatPercentage } from "../lib/utils";
 import {
   BookOpen,
@@ -39,6 +41,7 @@ import {
   Sparkles,
   CheckCircle,
   GraduationCap,
+  Mic,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -98,6 +101,8 @@ const LearningPlansPage: React.FC = () => {
   const [generating, setGenerating] = useState(false);
   const [expandedPlanId, setExpandedPlanId] = useState<number | null>(null);
   const [showAIChat, setShowAIChat] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const { isVoiceEnabled } = useConsentStatus();
   const { toast, ToastContainer } = useToast();
   const [genForm, setGenForm] = useState({
     subject: "Mathematics",
@@ -272,10 +277,23 @@ const LearningPlansPage: React.FC = () => {
           </p>
         </div>
         <div className="flex gap-3">
+          {isVoiceEnabled && showAIChat && (
+            <Button
+              variant={voiceMode ? "default" : "outline"}
+              className="gap-2"
+              onClick={() => setVoiceMode(!voiceMode)}
+            >
+              <Mic className="h-4 w-4" />
+              {voiceMode ? "Voice On" : "Voice"}
+            </Button>
+          )}
           <Button
             variant="outline"
             className="gap-2"
-            onClick={() => setShowAIChat(!showAIChat)}
+            onClick={() => {
+              setShowAIChat(!showAIChat);
+              if (showAIChat) setVoiceMode(false);
+            }}
           >
             <Brain className="h-4 w-4" />
             AI Tutor
@@ -511,16 +529,23 @@ const LearningPlansPage: React.FC = () => {
           )}
         </div>
 
-        {/* ── AI Chat Panel ── */}
+        {/* ── AI Chat / Voice Tutor Panel ── */}
         {showAIChat && (
           <div className="lg:col-span-1 lg:sticky lg:top-4 lg:self-start">
-            <AIChat
-              onSendMessage={handleAIChatMessage}
-              title="AI Study Tutor"
-              placeholder="Ask about study tips, topic explanations..."
-              isPanel
-              className="h-[600px]"
-            />
+            {voiceMode && isVoiceEnabled ? (
+              <VoiceTutor
+                topic={genForm.subject}
+                onClose={() => setVoiceMode(false)}
+              />
+            ) : (
+              <AIChat
+                onSendMessage={handleAIChatMessage}
+                title="AI Study Tutor"
+                placeholder="Ask about study tips, topic explanations..."
+                isPanel
+                className="h-[600px]"
+              />
+            )}
           </div>
         )}
       </div>
