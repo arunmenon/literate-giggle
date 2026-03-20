@@ -148,7 +148,7 @@ async def generate_from_research(
         system=TAXONOMY_SYSTEM,
         temperature=0.3,
         use_cache=False,
-        max_tokens=4000,
+        max_tokens=16384,
     )
 
     if result is None:
@@ -220,7 +220,7 @@ async def generate_from_pdf(
         system=TAXONOMY_SYSTEM,
         temperature=0.2,
         use_cache=False,
-        max_tokens=4000,
+        max_tokens=16384,
     )
 
     if result is None:

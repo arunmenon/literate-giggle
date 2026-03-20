@@ -97,11 +97,17 @@ const TaxonomyManager: React.FC = () => {
 
   // Create wizard
   const [showCreator, setShowCreator] = useState(false);
+  const [showCreatorPicker, setShowCreatorPicker] = useState(false);
   const [creatorContext, setCreatorContext] = useState<{
     board: string;
     classGrade: number;
     subject: string;
   } | null>(null);
+  const [pickerForm, setPickerForm] = useState({
+    board: "CBSE",
+    classGrade: "10",
+    subject: "",
+  });
 
   // Clone modal
   const [cloneModal, setCloneModal] = useState<{
@@ -131,7 +137,7 @@ const TaxonomyManager: React.FC = () => {
     setError(null);
     try {
       const { data } = await taxonomyAPI.list();
-      setCurricula(data);
+      setCurricula(data.curricula ?? data);
       // Auto-expand all boards
       const boards = new Set<string>(
         data.map((c: CurriculumListItem) => c.board_code),
@@ -332,7 +338,17 @@ const TaxonomyManager: React.FC = () => {
   // ── Creator context (for creating from this page) ──
 
   const openCreator = () => {
-    setCreatorContext({ board: "CBSE", classGrade: 10, subject: "Science" });
+    setShowCreatorPicker(true);
+  };
+
+  const launchCreator = () => {
+    if (!pickerForm.subject.trim()) return;
+    setCreatorContext({
+      board: pickerForm.board,
+      classGrade: Number(pickerForm.classGrade),
+      subject: pickerForm.subject.trim(),
+    });
+    setShowCreatorPicker(false);
     setShowCreator(true);
   };
 
@@ -409,6 +425,73 @@ const TaxonomyManager: React.FC = () => {
           subtitle={`${totalCurricula - activeCount} inactive`}
         />
       </div>
+
+      {/* Board/Class/Subject Picker before Creator */}
+      {showCreatorPicker && (
+        <Card className="border-primary/20">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" />
+                <CardTitle className="text-base">Create New Curriculum</CardTitle>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setShowCreatorPicker(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <CardDescription>Select the board, class, and subject for the new curriculum. AI will research the official syllabus and generate a chapter/topic structure.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Board</label>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={pickerForm.board}
+                  onChange={(e) => setPickerForm((f) => ({ ...f, board: e.target.value }))}
+                >
+                  <option value="CBSE">CBSE</option>
+                  <option value="ICSE">ICSE</option>
+                  <option value="State Board">State Board</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Class</label>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={pickerForm.classGrade}
+                  onChange={(e) => setPickerForm((f) => ({ ...f, classGrade: e.target.value }))}
+                >
+                  {[7, 8, 9, 10, 11, 12].map((g) => (
+                    <option key={g} value={String(g)}>Class {g}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Subject</label>
+              <Input
+                placeholder="e.g. Mathematics, Science, English, Social Studies"
+                value={pickerForm.subject}
+                onChange={(e) => setPickerForm((f) => ({ ...f, subject: e.target.value }))}
+                autoFocus
+              />
+              <p className="text-xs text-muted-foreground">
+                Common subjects: Mathematics, Science, English, Social Studies, Hindi, Physics, Chemistry, Biology, Computer Science
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setShowCreatorPicker(false)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={launchCreator} disabled={!pickerForm.subject.trim()}>
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                Generate with AI
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* TaxonomyCreator overlay */}
       {showCreator && creatorContext && (
